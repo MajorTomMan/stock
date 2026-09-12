@@ -12,7 +12,7 @@ services:
     ports:
       - "10007:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres18_data:/var/lib/postgresql
     shm_size: 256mb
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U major -d stock"]
@@ -22,4 +22,4 @@ services:
       start_period: 10s
 
 volumes:
-  postgres_data:
+  postgres18_data:
