@@ -1,0 +1,21 @@
+name: Python syntax check
+
+on:
+  push:
+    branches:
+      - feature/market-data-v1
+  pull_request:
+    paths:
+      - "backend/stock_data/**"
+      - ".github/workflows/python-syntax.yml"
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile Python sources
+        run: python -m compileall -q backend/stock_data
