@@ -5,6 +5,7 @@ from datetime import date
 from .config import Settings
 from .database import Database
 from .ingestion import IngestionService
+from .publication import PublicationService
 from .providers import SzseProvider
 
 
@@ -26,6 +27,11 @@ def main() -> None:
     daily = sub.add_parser("sync-szse-daily")
     daily.add_argument("--date", required=True, type=_parse_date)
 
+    audit = sub.add_parser("audit-szse-daily", help="Offline QA for one persisted SZSE snapshot")
+    audit.add_argument("--date", required=True, type=_parse_date)
+    audit.add_argument("--publish", action="store_true", help="Publish only if all blocking checks pass")
+    audit.add_argument("--min-coverage", type=float, default=0.65)
+
     bootstrap = sub.add_parser("bootstrap-baostock")
     bootstrap.add_argument("--start", default="1991-01-01", type=_parse_date)
     bootstrap.add_argument("--end", required=True, type=_parse_date)
@@ -43,6 +49,13 @@ def main() -> None:
 
     if args.command == "migrate":
         print("database migrations applied")
+        return
+
+    if args.command == "audit-szse-daily":
+        report = PublicationService(db).audit(
+            args.date, publish=args.publish, min_coverage=args.min_coverage,
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
         return
 
     szse = SzseProvider(settings.raw_data_dir, settings.http_timeout_seconds)
