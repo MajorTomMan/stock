@@ -1,4 +1,5 @@
 from datetime import date
+import time
 
 import baostock as bs
 
@@ -20,14 +21,50 @@ class BaoStockProvider(DailyMarketProvider):
     name = "BAOSTOCK"
     priority = 50
 
+    LOGIN_ATTEMPTS = 4
+
     def __enter__(self):
-        result = bs.login()
-        if result.error_code != "0":
-            raise RuntimeError(f"BaoStock login failed: {result.error_code} {result.error_msg}")
+        self._login_with_retry("login")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        bs.logout()
+        try:
+            bs.logout()
+        except Exception:
+            # A dropped connection can also cause logout to fail; do not mask
+            # an earlier per-stock failure or a successful import.
+            pass
+
+    def _login_with_retry(self, action: str) -> None:
+        """Retry transient login errors before starting or resuming a batch."""
+        last_error: Exception | None = None
+        for attempt in range(1, self.LOGIN_ATTEMPTS + 1):
+            try:
+                result = bs.login()
+                if result is not None and result.error_code == "0":
+                    return
+                code = getattr(result, "error_code", "NO_RESPONSE")
+                message = getattr(result, "error_msg", "BaoStock returned no login result")
+                last_error = RuntimeError(f"{code} {message}")
+            except Exception as exc:
+                last_error = exc
+            if attempt == self.LOGIN_ATTEMPTS:
+                break
+            delay = min(2 ** attempt, 8)
+            print(
+                f"[BAOSTOCK] {action} attempt {attempt}/{self.LOGIN_ATTEMPTS} failed: "
+                f"{last_error}; retry in {delay}s",
+                flush=True,
+            )
+            try:
+                bs.logout()
+            except Exception:
+                pass
+            time.sleep(delay)
+        raise RuntimeError(
+            f"BaoStock {action} failed after {self.LOGIN_ATTEMPTS} attempts: {last_error}. "
+            "Previously completed stocks remain stored; retry the same command later."
+        ) from last_error
 
     def reconnect(self) -> None:
         """Renew the BaoStock login after a transient network/session error."""
@@ -35,9 +72,7 @@ class BaoStockProvider(DailyMarketProvider):
             bs.logout()
         except Exception:
             pass
-        result = bs.login()
-        if result.error_code != "0":
-            raise RuntimeError(f"BaoStock reconnect failed: {result.error_code} {result.error_msg}")
+        self._login_with_retry("reconnect")
 
     @staticmethod
     def _code(symbol: str) -> str:
