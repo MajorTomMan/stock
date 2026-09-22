@@ -102,3 +102,44 @@ class BootstrapTests(TestCase):
             )
         self.assertEqual(result["outside_window"], 1)
         self.assertNotIn("300001", FakeProvider.seen)
+
+
+class LoginRetryTests(TestCase):
+    def test_initial_login_recovers_from_network_receive_error(self):
+        from stock_data.providers.baostock_provider import BaoStockProvider
+        failures = [
+            SimpleNamespace(error_code="10002007", error_msg="network receive error"),
+            SimpleNamespace(error_code="0", error_msg="success"),
+        ]
+        with patch("stock_data.providers.baostock_provider.bs.login", side_effect=failures) as login, \
+             patch("stock_data.providers.baostock_provider.bs.logout") as logout, \
+             patch("stock_data.providers.baostock_provider.time.sleep") as sleep:
+            with BaoStockProvider():
+                pass
+        self.assertEqual(login.call_count, 2)
+        sleep.assert_called_once_with(2)
+        self.assertEqual(logout.call_count, 2)  # cleanup before retry + context exit
+
+    def test_initial_login_final_failure_is_bounded(self):
+        from stock_data.providers.baostock_provider import BaoStockProvider
+        failure = SimpleNamespace(error_code="10002007", error_msg="network receive error")
+        with patch("stock_data.providers.baostock_provider.bs.login", return_value=failure) as login, \
+             patch("stock_data.providers.baostock_provider.bs.logout"), \
+             patch("stock_data.providers.baostock_provider.time.sleep") as sleep:
+            with self.assertRaisesRegex(RuntimeError, "failed after 4 attempts"):
+                with BaoStockProvider():
+                    pass
+        self.assertEqual(login.call_count, 4)
+        self.assertEqual(sleep.call_count, 3)
+
+    def test_reconnect_uses_same_login_retry(self):
+        from stock_data.providers.baostock_provider import BaoStockProvider
+        failures = [
+            OSError("Broken pipe"),
+            SimpleNamespace(error_code="0", error_msg="success"),
+        ]
+        with patch("stock_data.providers.baostock_provider.bs.login", side_effect=failures) as login, \
+             patch("stock_data.providers.baostock_provider.bs.logout"), \
+             patch("stock_data.providers.baostock_provider.time.sleep"):
+            BaoStockProvider().reconnect()
+        self.assertEqual(login.call_count, 2)
