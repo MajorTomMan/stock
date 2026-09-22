@@ -1,165 +1,82 @@
-# Market Data Backend V1
+# Backend · 深市日线数据
 
-第一阶段只做已经验证过的数据链路：
+当前阶段仅包含：SZSE 证券主数据与官方日快照、BaoStock 未复权历史回填、PostgreSQL 数据存储以及只读行情 API。**不包含**实时行情、交易或回测功能。
 
-- **SZSE**：A 股主数据、退市信息、简称变更、最近历史/每日官方快照。
-- **BaoStock**：深市长期未复权日线冷启动。
-- **PostgreSQL**：保存来源观察值与 canonical 日线。
+## 项目职责
 
-## 数据选择规则
+| 路径 | 作用 |
+| --- | --- |
+| `stock_data/providers/` | 对接 BaoStock 与深交所，转换为统一模型 |
+| `stock_data/ingestion.py` | 主数据同步、日快照、按股票分批回填 |
+| `stock_data/database.py` | 数据存取、采集执行记录、数据质量问题 |
+| `stock_data/migrations.py` | 数据表结构版本；由 CLI 自动执行 |
+| `stock_data/queries.py`、`api.py` | 只读数据库、提供 HTTP API |
+| `tests/` | 不依赖数据库或网络的单元测试 |
+| `data/raw/szse/` | 下载的原始 XLSX（本机生成，已被 Git 忽略） |
 
-`market_daily_observation` 保留每个来源的数据；`market_daily` 是当前 canonical 结果。
+`market_daily_observation` 保存各来源原始规范化事实；`market_daily` 选择对外使用的日线。SZSE 来源优先级为 10，BaoStock 为 50，同一天的 BaoStock 记录不会覆盖已选中的 SZSE 记录。价格保留未复权形式；成交量为**股**，成交额为**元**；停牌记录中的 NULL 与 0 保持区别。
 
-来源优先级：
+## 启动（已有数据库无需删除或重新初始化）
 
-- `SZSE = 10`
-- `BAOSTOCK = 50`
-
-数字越小优先级越高。因此同一股票同一日期同时存在 SZSE 和 BaoStock 时，`market_daily` 使用 SZSE，但 BaoStock 原记录仍保留在 observation 表中。
-
-## 表
-
-- `instrument`：证券主数据。
-- `instrument_name_history`：简称变更历史。
-- `trade_calendar`：交易日历预留表。
-- `market_daily_observation`：各数据源规范化后的日线事实。
-- `market_daily`：按来源优先级选择后的 canonical 日线。
-- `ingestion_run`：每次采集执行记录。
-- `raw_artifact`：SZSE 原始 XLSX 路径、SHA-256、大小。
-- `data_quality_issue`：数据质量问题，例如 `EARLY_HISTORY_GAP`。
-
-成交量统一为 **股**，成交额统一为 **人民币元**。停牌情况下 `volume_shares` / `turnover_cny` 允许为 `NULL`，不强制改成 0。
-
-## 启动 PostgreSQL
+在 `backend/` 目录运行：
 
 ```bash
-cd backend
 docker compose up -d
-```
-
-PostgreSQL 对宿主机暴露：
-
-```text
-127.0.0.1:10007
-```
-
-## 安装 Python 依赖
-
-```bash
-cd backend
 python -m pip install -r requirements.txt
-```
-
-可选环境变量：
-
-```bash
-export DATABASE_URL='postgresql://major:majortom@127.0.0.1:10007/stock'
-export RAW_DATA_DIR='./data/raw'
-```
-
-## 初始化数据库
-
-```bash
 python -m stock_data.cli migrate
 ```
 
-## 1. 同步 SZSE 主数据
+默认 PostgreSQL 连接 URL 为 `postgresql://major:majortom@127.0.0.1:10007/stock`。可通过 `DATABASE_URL` 覆盖；`RAW_DATA_DIR` 默认为 `./data/raw`，`HTTP_TIMEOUT_SECONDS` 默认为 40。参考 `.env.example`；CLI 不会自动读取该文件，需要使用环境变量或自行加载。
+
+**重要：**现有 compose 的宿主机端口映射是 `10007:5432`，可能监听所有网络接口。API 示例默认仅监听本机；如需在不受信任的网络环境使用数据库，应单独限制数据库端口访问。不要执行 `docker compose down -v`、`docker volume prune` 或 `git clean -fdx`，避免丢失 PostgreSQL 数据卷或本机原始 XLSX。
+
+## 采集命令
+
+首次使用时同步深交所主数据：
 
 ```bash
 python -m stock_data.cli sync-szse-master
 ```
 
-会获取并保存：
+包括当前 A 股列表、退市证券、股票简称变更。启动时自动调用尚未应用的 migration；重复执行主数据同步会 upsert。
 
-- `1110/tab1`：A 股列表
-- `1793_ssgs/tab2`：终止上市
-- `SSGSGMXX/tab2`：简称变更
-
-原始 XLSX 保存在 `data/raw/szse/`。
-
-## 2. 先小规模验证 BaoStock 冷启动
+先选 3 只股票验证历史日线：
 
 ```bash
 python -m stock_data.cli bootstrap-baostock \
-  --start 1991-01-01 \
-  --end 2025-08-31 \
+  --start 1991-01-01 --end 2025-08-31 \
   --codes 000001.SZ 000004.SZ 300001.SZ
 ```
 
-或者只跑前 10 个证券：
+全深市按批回填（**保持相同日期范围**，重复执行该命令可跳过已成功的股票）：
 
 ```bash
 python -m stock_data.cli bootstrap-baostock \
-  --start 1991-01-01 \
-  --end 2025-08-31 \
-  --limit 10
+  --start 1991-01-01 --end 2025-08-31 \
+  --batch-size 50 --delay 10 --retries 1
 ```
 
-确认无误后再去掉 `--codes/--limit` 做全量冷启动。
+`--batch-size` 默认 50，控制每次最多处理多少只**待完成**股票；`--delay` 控制股票间的等待秒数；`--retries` 控制单只股票失败后的额外重试次数。上述 10 秒是近期连接异常后的保守排查设置，**不是 BaoStock 官方限流阈值**。
 
-冷启动是幂等的，可以重跑。若首条行情比官方 `list_date` 晚超过 7 天，会写入：
+断点续跑只跳过**股票 + 实际查询日期区间完全匹配**、且 `ingestion_run.status=SUCCESS` 的任务。修改 `--end` 后会按新区间重新获取。必要时对指定股票加 `--force` 忽略检查点；正常续跑请勿使用。零行结果也可能被标记为成功，不能将该状态视为完整性校验。
 
-```text
-EARLY_HISTORY_GAP
-```
+首次登录及断线重连最多尝试 4 次（等待 2、4、8 秒）；如服务端仍不可用，命令会退出，稍后重跑同一日期窗口即可；已完成股票和数据不会被清空。当前不支持多个进程同时回填同一窗口，也没有自动冷却调度器。
 
-例如我们实测到的早期退市老股缺口会被显式记录，而不是静默忽略。
-
-## 3. 每日 SZSE 官方快照
+导入**指定日期**的深交所官方日快照：
 
 ```bash
-python -m stock_data.cli sync-szse-daily --date 2026-09-11
-```
-
-`1815_stock_snapshot` 返回的范围包含非 A 股证券，所以写库前会与 `instrument` 主数据交集，只接收已识别的深市 A 股。
-
-## 推荐首次执行顺序
-
-```bash
-cd backend
-docker compose up -d
-python -m pip install -r requirements.txt
-python -m stock_data.cli migrate
-python -m stock_data.cli sync-szse-master
-python -m stock_data.cli bootstrap-baostock --start 1991-01-01 --end 2025-08-31 --codes 000001.SZ 000004.SZ 300001.SZ
 python -m stock_data.cli sync-szse-daily --date 2025-09-01
 ```
 
-最后一条使用我们已经实测确认 SZSE 可返回的日期，方便检查 SZSE 是否正确覆盖 BaoStock canonical 数据。
+官方快照接口可能对部分历史日期返回空结果；当天无数据并不等于休市。请核实日期和原始文件，而不是自动将零行标记为历史行情完整。
 
-
-## 4. 全深市历史回填：分批、断点续跑
-
-建议使用相同的 `--start` 和 `--end` 重复执行。每次最多处理 50 只尚未完成的股票：
- 
-```bash
-python -m stock_data.cli bootstrap-baostock \
-  --start 1991-01-01 --end 2025-08-31 --batch-size 50
-```
-
-命令结束时打印 `already_completed`、`attempted`、`failed_instruments`、`remaining_pending`。重复运行相同命令时，只跳过具有 **相同实际查询日期区间** 且成功结束的股票；失败的会再次尝试。用户指定 `--codes` 时只处理这些代码，`--batch-size` 在跳过已完成股票后生效。
+## 只读 API
 
 ```bash
-# 调试：一次只处理 3 只，单只失败额外重试 3 次
-python -m stock_data.cli bootstrap-baostock --start 1991-01-01 --end 2025-08-31 --batch-size 3 --retries 3
-
-# 重新抓取已完成的日期区间（可覆盖同源 observation；不改变来源优先级）
-python -m stock_data.cli bootstrap-baostock --start 1991-01-01 --end 2025-08-31 --codes 000001.SZ --force
-```
-
-BaoStock 首次登录及断线重连遇到网络错误时会自动重试（默认最多 4 次，间隔 2、4、8 秒）；若持续失败，终端会提示网络错误并安全退出，本次尚未开始的股票不会标记为成功。检查服务恢复后，直接重跑同一命令即可断点续跑。\n\n`--delay` 控制股票之间的等待秒数（默认 0.3）。不要在两台机器上对同一日期窗口同时启动该批量任务；V1 没有分布式任务锁。进程被强制结束时，最后一个 `RUNNING` 任务可能留在数据库里，下次运行仍会重试该股票。只有 `SUCCESS` 才作为跳过依据，已有行情不会因为重试被清空。
-
-**注意：**只按完全相同的实际日期区间跳过。修改 `--end` 时会重新获取该股票的新区间；V1 不做重叠区间差集规划。对停牌、非交易日、或尚未有历史数据的股票，零行响应也会记录 `SUCCESS`，不能把它等同于验证该股票每个交易日的数据完备。
-
-## 5. 查询 API（只读 PostgreSQL）
-
-```bash
-cd backend
-python -m pip install -r requirements.txt
 python -m uvicorn stock_data.api:app --host 127.0.0.1 --port 8000
 ```
 
-打开 http://127.0.0.1:8000/docs 交互调试，或在 Bash 中运行：
+交互文档：http://127.0.0.1:8000/docs
 
 ```bash
 curl 'http://127.0.0.1:8000/health'
@@ -169,6 +86,13 @@ curl 'http://127.0.0.1:8000/api/instruments/000001/daily?start=2025-08-01&end=20
 curl 'http://127.0.0.1:8000/api/market/overview?limit=30'
 ```
 
-日线接口默认取所选时间窗口 **最近 250 条**（最大 5000），响应中的 `bars` 按日期升序，便于直接画 K 线。若 `has_more=true`，把 `next_end` 传入下一次请求的 `end` 获取更早的数据。返回 `trade_date`、未复权 OHLC、成交量（股）、成交额（元）、`selected_source` 等字段。
+日线默认获取查询窗口中最近 250 条、最多 5000 条，返回的 `bars` 按日期升序；`has_more=true` 时可用 `next_end` 查询更早记录。市场概览的 `as_of` 是**数据库已入库的最新日期**，不是实时行情。API 尚无鉴权，仅供本机开发。
 
-市场概览里的 `as_of` 是**数据库中最新交易日期**，不能当作实时行情。此 API 没有鉴权，只绑定 `127.0.0.1` 本地调试；对外部署前应加鉴权、限流和市场数据展示许可检查。 
+## 测试
+
+```bash
+python -m compileall -q stock_data tests
+python -m unittest discover -s tests -v
+```
+
+数据质量目前仅具备基本的早期行情缺口记录；交易日历对齐、来源价格差异和日快照发布门槛尚未实现。
