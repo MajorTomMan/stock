@@ -3,33 +3,23 @@ services:
     image: postgres:18
     container_name: stock-postgres
     restart: unless-stopped
-
     environment:
       POSTGRES_USER: major
       POSTGRES_PASSWORD: majortom
       POSTGRES_DB: stock
-
       TZ: Asia/Shanghai
       PGTZ: Asia/Shanghai
-
     ports:
-      - "10007:10007"
-
+      - "10007:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-
+      - postgres18_data:/var/lib/postgresql
     shm_size: 256mb
-
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U stock -d stock"
-        ]
+      test: ["CMD-SHELL", "pg_isready -U major -d stock"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
 
 volumes:
-  postgres_data:
+  postgres18_data:
