@@ -31,11 +31,11 @@ class Database:
                 cur.execute(sql)
                 cur.execute("INSERT INTO schema_migration(version, name) VALUES (%s, %s)", (version, name))
 
-    def start_run(self, provider: str, dataset: str, start: date | None = None, end: date | None = None) -> int:
+    def start_run(self, provider: str, dataset: str, start: date | None = None, end: date | None = None, metadata: dict | None = None) -> int:
         with self.connect() as conn, conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO ingestion_run(provider, dataset, requested_from, requested_to) VALUES (%s,%s,%s,%s) RETURNING id",
-                (provider, dataset, start, end),
+                "INSERT INTO ingestion_run(provider, dataset, requested_from, requested_to, metadata) VALUES (%s,%s,%s,%s,%s::jsonb) RETURNING id",
+                (provider, dataset, start, end, json.dumps(metadata or {})),
             )
             return cur.fetchone()[0]
 
@@ -124,6 +124,20 @@ class Database:
 
     def known_symbols(self, exchange: str = "SZSE") -> set[str]:
         return {row[1] for row in self.list_instruments(exchange)}
+
+    def completed_history_jobs(self) -> set[tuple[str, date, date]]:
+        """Successful per-symbol windows: only an exact match is safe to skip."""
+        with self.connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT metadata->>'symbol', requested_from, requested_to
+                FROM ingestion_run
+                WHERE provider='BAOSTOCK' AND dataset='daily_history'
+                  AND status='SUCCESS' AND metadata ? 'symbol'
+                  AND requested_from IS NOT NULL AND requested_to IS NOT NULL
+                """
+            )
+            return {(symbol, start, end) for symbol, start, end in cur.fetchall() if symbol}
 
     def write_daily_bars(self, bars: Iterable[DailyBar], raw_artifact_id: int | None = None) -> int:
         rows = list(bars)

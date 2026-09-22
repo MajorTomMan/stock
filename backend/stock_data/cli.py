@@ -30,7 +30,11 @@ def main() -> None:
     bootstrap.add_argument("--start", default="1991-01-01", type=_parse_date)
     bootstrap.add_argument("--end", required=True, type=_parse_date)
     bootstrap.add_argument("--codes", nargs="*")
-    bootstrap.add_argument("--limit", type=int)
+    bootstrap.add_argument("--limit", "--batch-size", dest="limit", type=int, default=50,
+                           help="Process at most N pending stocks in this invocation (default: 50)")
+    bootstrap.add_argument("--force", action="store_true", help="Ignore SUCCESS checkpoints and re-import")
+    bootstrap.add_argument("--retries", type=int, default=2, help="Retries per failed symbol (default: 2)")
+    bootstrap.add_argument("--delay", type=float, default=0.3, help="Seconds between symbols (default: 0.3)")
 
     args = parser.parse_args()
     settings = Settings.from_env()
@@ -55,7 +59,10 @@ def main() -> None:
 
     if args.command == "bootstrap-baostock":
         codes = {_normalize_code(code) for code in args.codes} if args.codes else None
-        result = service.bootstrap_baostock(args.start, args.end, codes, args.limit)
+        result = service.bootstrap_baostock(
+            args.start, args.end, codes, args.limit,
+            resume=not args.force, retries=args.retries, delay_seconds=args.delay,
+        )
         print(json.dumps(result, ensure_ascii=False, indent=2))
 
 

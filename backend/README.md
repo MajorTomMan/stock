@@ -126,3 +126,49 @@ python -m stock_data.cli sync-szse-daily --date 2025-09-01
 ```
 
 最后一条使用我们已经实测确认 SZSE 可返回的日期，方便检查 SZSE 是否正确覆盖 BaoStock canonical 数据。
+
+
+## 4. 全深市历史回填：分批、断点续跑
+
+建议使用相同的 `--start` 和 `--end` 重复执行。每次最多处理 50 只尚未完成的股票：
+ 
+```bash
+python -m stock_data.cli bootstrap-baostock \
+  --start 1991-01-01 --end 2025-08-31 --batch-size 50
+```
+
+命令结束时打印 `already_completed`、`attempted`、`failed_instruments`、`remaining_pending`。重复运行相同命令时，只跳过具有 **相同实际查询日期区间** 且成功结束的股票；失败的会再次尝试。用户指定 `--codes` 时只处理这些代码，`--batch-size` 在跳过已完成股票后生效。
+
+```bash
+# 调试：一次只处理 3 只，单只失败额外重试 3 次
+python -m stock_data.cli bootstrap-baostock --start 1991-01-01 --end 2025-08-31 --batch-size 3 --retries 3
+
+# 重新抓取已完成的日期区间（可覆盖同源 observation；不改变来源优先级）
+python -m stock_data.cli bootstrap-baostock --start 1991-01-01 --end 2025-08-31 --codes 000001.SZ --force
+```
+
+`--delay` 控制股票之间的等待秒数（默认 0.3）。不要在两台机器上对同一日期窗口同时启动该批量任务；V1 没有分布式任务锁。进程被强制结束时，最后一个 `RUNNING` 任务可能留在数据库里，下次运行仍会重试该股票。只有 `SUCCESS` 才作为跳过依据，已有行情不会因为重试被清空。
+
+**注意：**只按完全相同的实际日期区间跳过。修改 `--end` 时会重新获取该股票的新区间；V1 不做重叠区间差集规划。对停牌、非交易日、或尚未有历史数据的股票，零行响应也会记录 `SUCCESS`，不能把它等同于验证该股票每个交易日的数据完备。
+
+## 5. 查询 API（只读 PostgreSQL）
+
+```bash
+cd backend
+python -m pip install -r requirements.txt
+python -m uvicorn stock_data.api:app --host 127.0.0.1 --port 8000
+```
+
+打开 http://127.0.0.1:8000/docs 交互调试，或在 Bash 中运行：
+
+```bash
+curl 'http://127.0.0.1:8000/health'
+curl 'http://127.0.0.1:8000/api/instruments?q=平安&limit=10'
+curl 'http://127.0.0.1:8000/api/instruments/000001'
+curl 'http://127.0.0.1:8000/api/instruments/000001/daily?start=2025-08-01&end=2025-09-01&limit=100'
+curl 'http://127.0.0.1:8000/api/market/overview?limit=30'
+```
+
+日线接口默认取所选时间窗口 **最近 250 条**（最大 5000），响应中的 `bars` 按日期升序，便于直接画 K 线。若 `has_more=true`，把 `next_end` 传入下一次请求的 `end` 获取更早的数据。返回 `trade_date`、未复权 OHLC、成交量（股）、成交额（元）、`selected_source` 等字段。
+
+市场概览里的 `as_of` 是**数据库中最新交易日期**，不能当作实时行情。此 API 没有鉴权，只绑定 `127.0.0.1` 本地调试；对外部署前应加鉴权、限流和市场数据展示许可检查。 

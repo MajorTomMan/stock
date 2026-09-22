@@ -1,4 +1,5 @@
 from datetime import date
+import time
 
 from .database import Database
 from .providers import BaoStockProvider, SzseProvider
@@ -70,57 +71,125 @@ class IngestionService:
             self.db.fail_run(run_id, exc)
             raise
 
-    def bootstrap_baostock(self, start: date, end: date, codes: set[str] | None = None, limit: int | None = None) -> dict:
+    def bootstrap_baostock(
+        self,
+        start: date,
+        end: date,
+        codes: set[str] | None = None,
+        limit: int | None = None,
+        *,
+        resume: bool = True,
+        retries: int = 2,
+        delay_seconds: float = 0.3,
+    ) -> dict:
+        """Run at most limit pending symbols; each completed symbol is a durable checkpoint.
+
+        A checkpoint only matches the same requested effective date window.
+        Changing --start/--end intentionally creates a new backfill window.
+        """
+        if start > end:
+            raise ValueError("--start must not be after --end")
+        if limit is not None and limit < 1:
+            raise ValueError("--batch-size/--limit must be >= 1")
+        if retries < 0 or retries > 10 or delay_seconds < 0:
+            raise ValueError("--retries must be 0..10 and --delay must be >= 0")
+
         instruments = self.db.list_instruments("SZSE")
         if codes:
             instruments = [row for row in instruments if row[1] in codes]
-        if limit is not None:
-            instruments = instruments[:limit]
+            unknown = codes - {row[1] for row in instruments}
+            if unknown:
+                raise RuntimeError(f"Unknown instrument codes: {sorted(unknown)}")
         if not instruments:
-            raise RuntimeError("No instruments selected. Run sync-szse-master first or check --codes.")
+            raise RuntimeError("No instruments selected. Run sync-szse-master first.")
 
-        total_rows = 0
-        success = 0
+        completed = self.db.completed_history_jobs() if resume else set()
+        eligible = []
+        skipped_existing = 0
+        outside_window = 0
+        for instrument_id, symbol, list_date, delist_date in instruments:
+            actual_start = max(start, list_date) if list_date else start
+            actual_end = min(end, delist_date) if delist_date else end
+            if actual_start > actual_end:
+                outside_window += 1
+                continue
+            if (symbol, actual_start, actual_end) in completed:
+                skipped_existing += 1
+                continue
+            eligible.append((instrument_id, symbol, list_date, actual_start, actual_end))
+
+        pending_total = len(eligible)
+        selected = eligible[:limit] if limit is not None else eligible
         failures: list[dict] = []
+        successful = 0
+        total_rows = 0
+
+        if not selected:
+            return {
+                "selected_instruments": len(instruments),
+                "already_completed": skipped_existing,
+                "outside_window": outside_window,
+                "attempted": 0,
+                "successful_instruments": 0,
+                "failed_instruments": 0,
+                "rows": 0,
+                "remaining_pending": pending_total,
+                "failures": [],
+            }
+
         with BaoStockProvider() as provider:
-            for instrument_id, symbol, list_date, delist_date in instruments:
-                actual_start = max(start, list_date) if list_date else start
-                actual_end = min(end, delist_date) if delist_date else end
-                if actual_start > actual_end:
-                    continue
-                run_id = self.db.start_run(provider.name, "daily_history", actual_start, actual_end)
-                try:
-                    bars = provider.fetch_daily(symbol, actual_start, actual_end)
-                    count = self.db.write_daily_bars(bars)
-                    total_rows += count
-                    success += 1
-                    if bars and list_date:
-                        self.db.record_early_history_gap(
-                            instrument_id,
-                            symbol,
-                            list_date,
-                            bars[0].trade_date,
-                            provider.name,
+            for number, (instrument_id, symbol, list_date, actual_start, actual_end) in enumerate(selected, 1):
+                run_id = self.db.start_run(
+                    provider.name, "daily_history", actual_start, actual_end,
+                    {"symbol": symbol, "requested_start": start.isoformat(), "requested_end": end.isoformat()},
+                )
+                for attempt in range(1, retries + 2):
+                    try:
+                        bars = provider.fetch_daily(symbol, actual_start, actual_end)
+                        count = self.db.write_daily_bars(bars)
+                        if bars and list_date:
+                            self.db.record_early_history_gap(
+                                instrument_id, symbol, list_date, bars[0].trade_date, provider.name,
+                            )
+                        self.db.finish_run(
+                            run_id, count,
+                            {
+                                "symbol": symbol,
+                                "attempts": attempt,
+                                "first_bar_date": bars[0].trade_date.isoformat() if bars else None,
+                                "last_bar_date": bars[-1].trade_date.isoformat() if bars else None,
+                                "empty_result": not bool(bars),
+                                "requested_start": start.isoformat(),
+                                "requested_end": end.isoformat(),
+                            },
                         )
-                    self.db.finish_run(
-                        run_id,
-                        count,
-                        {
-                            "symbol": symbol,
-                            "first_bar_date": bars[0].trade_date.isoformat() if bars else None,
-                            "last_bar_date": bars[-1].trade_date.isoformat() if bars else None,
-                        },
-                    )
-                    print(f"[BAOSTOCK] {symbol}: {count} rows")
-                except Exception as exc:
-                    self.db.fail_run(run_id, exc)
-                    failures.append({"symbol": symbol, "error": str(exc)})
-                    print(f"[BAOSTOCK] {symbol}: FAILED: {exc}")
+                        successful += 1
+                        total_rows += count
+                        print(f"[BAOSTOCK] [{number}/{len(selected)}] {symbol}: {count} rows (attempt {attempt})", flush=True)
+                        break
+                    except Exception as exc:
+                        if attempt > retries:
+                            self.db.fail_run(run_id, exc)
+                            failures.append({"symbol": symbol, "error": str(exc)})
+                            print(f"[BAOSTOCK] [{number}/{len(selected)}] {symbol}: FAILED: {exc}", flush=True)
+                            break
+                        print(f"[BAOSTOCK] {symbol}: retry {attempt}/{retries} after: {exc}", flush=True)
+                        time.sleep(min(2 ** (attempt - 1), 30))
+                        try:
+                            provider.reconnect()
+                        except Exception as reconnect_error:
+                            print(f"[BAOSTOCK] {symbol}: reconnect failed: {reconnect_error}", flush=True)
+                if delay_seconds:
+                    time.sleep(delay_seconds)
 
         return {
             "selected_instruments": len(instruments),
-            "successful_instruments": success,
+            "already_completed": skipped_existing,
+            "outside_window": outside_window,
+            "attempted": len(selected),
+            "successful_instruments": successful,
             "failed_instruments": len(failures),
             "rows": total_rows,
+            "remaining_pending": pending_total - successful,
             "failures": failures,
         }

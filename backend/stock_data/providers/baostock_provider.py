@@ -29,6 +29,16 @@ class BaoStockProvider(DailyMarketProvider):
     def __exit__(self, exc_type, exc_val, exc_tb):
         bs.logout()
 
+    def reconnect(self) -> None:
+        """Renew the BaoStock login after a transient network/session error."""
+        try:
+            bs.logout()
+        except Exception:
+            pass
+        result = bs.login()
+        if result.error_code != "0":
+            raise RuntimeError(f"BaoStock reconnect failed: {result.error_code} {result.error_msg}")
+
     @staticmethod
     def _code(symbol: str) -> str:
         return f"sz.{symbol}"
