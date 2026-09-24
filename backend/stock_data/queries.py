@@ -45,24 +45,16 @@ class MarketQueries:
             )
             return cur.fetchone()
 
-    def get_daily(self, symbol: str, start: date | None, end: date | None,
-                  limit: int, published_only: bool = False) -> list[dict]:
+    def get_daily(self, symbol: str, start: date | None, end: date | None, limit: int) -> list[dict]:
         sql = """
             SELECT d.trade_date, d.pre_close, d.open, d.high, d.low, d.close,
                    d.volume_shares, d.turnover_cny, d.pct_change, d.pe_ratio,
-                   d.trade_status, d.is_st, d.selected_source,
-                   CASE WHEN p.status='PUBLISHED' AND d.selected_source='SZSE'
-                        THEN 'PUBLISHED' ELSE 'UNREVIEWED' END AS data_status
+                   d.trade_status, d.is_st, d.selected_source
             FROM market_daily AS d
             JOIN instrument AS i ON i.id=d.instrument_id
-            LEFT JOIN market_daily_publication p
-              ON p.exchange='SZSE' AND p.dataset='stock_snapshot'
-             AND p.trade_date=d.trade_date
             WHERE i.exchange='SZSE' AND i.symbol=%s
         """
         params: list = [symbol]
-        if published_only:
-            sql += " AND p.status='PUBLISHED' AND d.selected_source='SZSE'"
         if start is not None:
             sql += " AND d.trade_date >= %s"
             params.append(start)
@@ -89,65 +81,6 @@ class MarketQueries:
                 JOIN instrument i ON i.id = d.instrument_id
                 WHERE i.exchange='SZSE' AND i.security_type='STOCK'
                   AND d.trade_date=%s
-                ORDER BY d.turnover_cny DESC NULLS LAST, i.symbol
-                LIMIT %s
-                """,
-                (as_of, limit),
-            )
-            rows = cur.fetchall()
-            return {"as_of": as_of, "count": len(rows), "items": rows}
-
-    def publication_status(self, limit: int = 30) -> list[dict]:
-        with self.db.connect() as conn, conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """
-                SELECT p.trade_date, p.status, p.ingestion_run_id, p.observed_count,
-                       p.eligible_count, p.quality_summary, p.checked_at, p.published_at
-                FROM market_daily_publication p
-                WHERE p.exchange='SZSE' AND p.dataset='stock_snapshot'
-                ORDER BY p.trade_date DESC LIMIT %s
-                """,
-                (limit,),
-            )
-            return cur.fetchall()
-
-    def quality_issues(self, limit: int, status: str = "OPEN") -> list[dict]:
-        with self.db.connect() as conn, conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """
-                SELECT q.id, i.symbol, q.trade_date, q.issue_type, q.severity,
-                       q.source, q.status, q.details, q.detected_at, q.resolved_at
-                FROM data_quality_issue q
-                LEFT JOIN instrument i ON i.id=q.instrument_id
-                WHERE q.status=%s
-                ORDER BY q.detected_at DESC, q.id DESC LIMIT %s
-                """,
-                (status, limit),
-            )
-            return cur.fetchall()
-
-    def published_overview(self, limit: int) -> dict:
-        """Only previously audited, explicitly published official daily snapshots."""
-        with self.db.connect() as conn, conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """
-                SELECT MAX(trade_date) AS as_of FROM market_daily_publication
-                WHERE exchange='SZSE' AND dataset='stock_snapshot'
-                  AND status='PUBLISHED'
-                """
-            )
-            as_of = cur.fetchone()["as_of"]
-            if as_of is None:
-                return {"as_of": None, "count": 0, "items": []}
-            cur.execute(
-                """
-                SELECT i.symbol, i.current_name, d.trade_date, d.close,
-                       d.pct_change, d.volume_shares, d.turnover_cny,
-                       d.selected_source
-                FROM market_daily d
-                JOIN instrument i ON i.id=d.instrument_id
-                WHERE i.exchange='SZSE' AND i.security_type='STOCK'
-                  AND d.trade_date=%s AND d.selected_source='SZSE'
                 ORDER BY d.turnover_cny DESC NULLS LAST, i.symbol
                 LIMIT %s
                 """,

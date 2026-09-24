@@ -143,27 +143,4 @@ CREATE TABLE IF NOT EXISTS data_quality_issue (
 CREATE INDEX IF NOT EXISTS idx_dq_issue_open ON data_quality_issue(status, issue_type, detected_at DESC);
 ''',
     ),
-    (
-        2,
-        "szse_daily_publication",
-        r'''
-CREATE TABLE IF NOT EXISTS market_daily_publication (
-    exchange VARCHAR(16) NOT NULL,
-    dataset VARCHAR(64) NOT NULL,
-    trade_date DATE NOT NULL,
-    status VARCHAR(16) NOT NULL DEFAULT 'STAGED'
-        CHECK (status IN ('STAGED', 'BLOCKED', 'PUBLISHED')),
-    ingestion_run_id BIGINT NOT NULL REFERENCES ingestion_run(id),
-    observed_count INTEGER NOT NULL DEFAULT 0,
-    eligible_count INTEGER NOT NULL DEFAULT 0,
-    quality_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
-    checked_at TIMESTAMPTZ,
-    published_at TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY(exchange, dataset, trade_date)
-);
-CREATE INDEX IF NOT EXISTS idx_market_daily_publication_status_date
-    ON market_daily_publication(exchange, dataset, status, trade_date DESC);
-''',
-    ),
 ]

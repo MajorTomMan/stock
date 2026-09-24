@@ -95,35 +95,13 @@ python -m compileall -q stock_data tests
 python -m unittest discover -s tests -v
 ```
 
-数据质量目前仅具备基本的早期行情缺口记录；交易日历对齐、来源价格差异和日快照发布门槛尚未实现。
+## 轻量数据检查
 
-## SZSE 官方日快照质检与发布（阶段二）
-
-更新分支后在 `backend/` 运行 `python -m stock_data.cli migrate`，只新增 `market_daily_publication` 表，不清空旧行情。**旧数据不会自动变为已发布**；BaoStock 历史回填仍被视作 `UNREVIEWED`，这不是历史交易日覆盖验证。
+直接读取已经入库的日线与来源记录，不新增数据库表、审核状态或外部数据请求：
 
 ```bash
-# 已入库的 2025-09-01 快照可直接离线检查，完全不访问 BaoStock：
-python -m stock_data.cli audit-szse-daily --date 2025-09-01
-
-# 检查通过后，明确允许将该日期的 SZSE 官方快照发布：
-python -m stock_data.cli audit-szse-daily --date 2025-09-01 --publish
-
-# 以后每日导入：导入只会置为 STAGED，不自动发布
-python -m stock_data.cli sync-szse-daily --date 2025-09-02
-python -m stock_data.cli audit-szse-daily --date 2025-09-02 --publish
+python -m stock_data.cli audit-daily --date 2025-09-01
+curl 'http://127.0.0.1:8000/api/quality/daily?date=2025-09-01'
 ```
 
-发布规则：该日期的 SZSE 导入任务必须为 `SUCCESS`；持久化的 SZSE 来源条数应与该次导入行数一致且非零；证券主数据中**有有效上市日期、在该日仍上市**的证券基数至少 30，官方快照覆盖这些证券的比例不少于 65%（`--min-coverage` 可调）；OHLC 价格次序、非正价格、负成交量/金额、canonical 来源都不能存在阻断性异常。SZSE 与 BaoStock 收盘价差异记为 WARN，不自动改写任何来源。检查结果及最多 100 条本轮样例记录进入 `data_quality_issue`，每次质检保留旧问题历史并关闭上一轮仍 OPEN 的同类问题。
-
-`STAGED` 代表数据已经入库但未发布；`BLOCKED` 代表导入失败或审计发现阻断性异常；`PUBLISHED` 仅代表这个日期的**官方快照通过当前的基础规则并被明确发布**，并不代表历史证券池/交易日历完全准确。现阶段覆盖比例是启发式校验，可能误拦早期日期；如被阻断，先查看质检详情、核对原始 XLSX 和当时证券数量，不应盲目降低阈值。已发布日期重新同步官方数据时会先回到 STAGED；重复导入被中断则保持未发布。
-
-只读查询：
-
-```bash
-curl 'http://127.0.0.1:8000/api/quality/publications'
-curl 'http://127.0.0.1:8000/api/quality/issues?status=OPEN'
-curl 'http://127.0.0.1:8000/api/market/published-overview'
-curl 'http://127.0.0.1:8000/api/instruments/000001/daily?published_only=true'
-```
-
-为兼容已有历史 K 线，原先的 `/api/instruments/{symbol}/daily` 和 `/api/market/overview` **仍能返回未发布的已入库行情**；日线每条会增加 `data_status`（`PUBLISHED` 或 `UNREVIEWED`），未经审计的数据不能当成已发布结果使用。网站对外只应使用 `published_only=true` / `published-overview` 端点；此阶段它们只涵盖已发布 SZSE 官方日快照，不涵盖尚未完成质量校验的 BaoStock 历史。交易日历表目前仍为空，暂不把没有日线的交易日自动判定为缺失；交易日历导入与历史覆盖率审计留待下一步实现。
+检查现有 OHLC 价格关系、负成交量/金额、SZSE 与 BaoStock 收盘价差异，以及官方最近一次成功导入的条数是否与数据库现存官方行数相同。最多显示前 100 条问题。未填充权威交易日历，所以“NO_DATA”只表示数据库没数据，不能据此判断是否休市或真实缺口；历史完整性检查留待日后真正需要时做。

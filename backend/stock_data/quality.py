@@ -1,85 +1,76 @@
-"""Conservative gates for daily SZSE snapshots.
+"""Read-only spot checks against existing canonical and source observations.
 
-A passing report confirms basic structural plausibility, not that the entire
-exchange history or every security's daily bar has been verified.
+No additional tables, publication states, or third-party requests.
 """
-from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Any
+
+from psycopg.rows import dict_row
+
+from .database import Database
 
 
-@dataclass(frozen=True)
-class Check:
-    issue_type: str
-    severity: str
-    details: dict[str, Any]
-    instrument_id: int | None = None
+class DailyQuality:
+    def __init__(self, db: Database):
+        self.db = db
 
+    def inspect(self, trade_date: date) -> dict:
+        with self.db.connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT i.symbol, d.open, d.high, d.low, d.close,
+                       d.volume_shares, d.turnover_cny, d.selected_source,
+                       sz.instrument_id AS official_present, sz.close AS szse_close, bs.close AS baostock_close
+                FROM market_daily d
+                JOIN instrument i ON i.id=d.instrument_id
+                LEFT JOIN market_daily_observation sz
+                  ON sz.instrument_id=d.instrument_id AND sz.trade_date=d.trade_date AND sz.source='SZSE'
+                LEFT JOIN market_daily_observation bs
+                  ON bs.instrument_id=d.instrument_id AND bs.trade_date=d.trade_date AND bs.source='BAOSTOCK'
+                WHERE i.exchange='SZSE' AND i.security_type='STOCK' AND d.trade_date=%s
+                ORDER BY i.symbol
+                """,
+                (trade_date,),
+            )
+            rows = cur.fetchall()
+            cur.execute(
+                """
+                SELECT row_count FROM ingestion_run
+                WHERE provider='SZSE' AND dataset='stock_snapshot'
+                  AND requested_from=%s AND requested_to=%s AND status='SUCCESS'
+                ORDER BY id DESC LIMIT 1
+                """,
+                (trade_date, trade_date),
+            )
+            latest = cur.fetchone()
+            expected_szse_rows = latest["row_count"] if latest else None
 
-def audit_snapshot(trade_date: date, bars: list[dict], expected_count: int,
-                   imported_count: int, *, min_coverage: float = 0.65) -> dict:
-    """Validate the persisted source observations for a single successful import.
-
-    An observed eligible security need not trade on every date; the coverage
-    ratio is a conservative *snapshot-level* sanity gate, not a gap detector.
-    """
-    if not (0 < min_coverage <= 1):
-        raise ValueError("min_coverage must be in (0, 1]")
-    blockers: list[Check] = []
-    warnings: list[Check] = []
-    count = len(bars)
-    if not count:
-        blockers.append(Check("SNAPSHOT_EMPTY", "ERROR", {"date": str(trade_date)}))
-    if count != imported_count:
-        blockers.append(Check("SNAPSHOT_SOURCE_COUNT", "ERROR", {
-            "observed": count, "latest_import_count": imported_count,
-        }))
-    if expected_count < 30:
-        blockers.append(Check("SNAPSHOT_BASELINE_UNAVAILABLE", "ERROR", {
-            "eligible": expected_count, "reason": "Fewer than 30 eligible, dated securities in current master data",
-        }))
-    elif count < expected_count * min_coverage:
-        blockers.append(Check("SNAPSHOT_LOW_COVERAGE", "ERROR", {
-            "observed": count, "eligible": expected_count, "min_coverage": min_coverage,
-        }))
-
-    for bar in bars:
-        invalid: list[str] = []
-        prices = {k: bar.get(k) for k in ("open", "high", "low", "close")}
-        non_null = {k: Decimal(str(v)) for k, v in prices.items() if v is not None}
-        if any(v <= 0 for v in non_null.values()):
-            invalid.append("non_positive_price")
-        if len(non_null) == 4:
-            if non_null["high"] < max(non_null["open"], non_null["close"], non_null["low"]):
-                invalid.append("high_less_than_other_price")
-            if non_null["low"] > min(non_null["open"], non_null["close"], non_null["high"]):
-                invalid.append("low_greater_than_other_price")
-        for col in ("volume_shares", "turnover_cny"):
-            value = bar.get(col)
-            if value is not None and value < 0:
-                invalid.append(f"negative_{col}")
-        if invalid:
-            blockers.append(Check("OHLC_INVALID", "ERROR", {
-                "symbol": bar["symbol"], "reason": invalid,
-            }, bar["instrument_id"]))
-
-        other_close = bar.get("baostock_close")
-        if other_close is not None and bar.get("close") is not None and other_close != bar["close"]:
-            warnings.append(Check("SOURCE_CLOSE_MISMATCH", "WARN", {
-                "symbol": bar["symbol"],
-                "szse_close": str(bar["close"]),
-                "baostock_close": str(other_close),
-            }, bar["instrument_id"]))
-
-    return {
-        "date": trade_date.isoformat(),
-        "status": "BLOCKED" if blockers else "STAGED",
-        "observed_count": count,
-        "eligible_count": expected_count,
-        "imported_count": imported_count,
-        "blocker_count": len(blockers),
-        "warning_count": len(warnings),
-        "blockers": blockers,
-        "warnings": warnings,
-    }
+        issues = []
+        szse_count = sum(row["official_present"] is not None for row in rows)
+        if not rows:
+            issues.append({"symbol": None, "type": "NO_DATA",
+                           "detail": "数据库中没有这一天的行情；可能是休市，也可能尚未采集"})
+        if expected_szse_rows is not None and expected_szse_rows != szse_count:
+            issues.append({"symbol": None, "type": "SNAPSHOT_COUNT_MISMATCH",
+                           "detail": f"最近一次官方导入 {expected_szse_rows} 条，当前官方日线 {szse_count} 条"})
+        for row in rows:
+            symbol = row["symbol"]
+            prices = {key: row[key] for key in ("open", "high", "low", "close") if row[key] is not None}
+            if any(value <= 0 for value in prices.values()):
+                issues.append({"symbol": symbol, "type": "NON_POSITIVE_PRICE", "detail": "存在非正价格"})
+            if "high" in prices and any(prices["high"] < value for key, value in prices.items() if key != "high"):
+                issues.append({"symbol": symbol, "type": "INVALID_HIGH", "detail": "最高价低于其他价格"})
+            if "low" in prices and any(prices["low"] > value for key, value in prices.items() if key != "low"):
+                issues.append({"symbol": symbol, "type": "INVALID_LOW", "detail": "最低价高于其他价格"})
+            if any(row[key] is not None and row[key] < 0 for key in ("volume_shares", "turnover_cny")):
+                issues.append({"symbol": symbol, "type": "NEGATIVE_VOLUME_OR_TURNOVER",
+                               "detail": "成交量或成交额为负"})
+            if row["szse_close"] is not None and row["baostock_close"] is not None:
+                if Decimal(row["szse_close"]) != Decimal(row["baostock_close"]):
+                    issues.append({"symbol": symbol, "type": "SOURCE_CLOSE_DIFF",
+                                   "detail": f"SZSE={row['szse_close']} BaoStock={row['baostock_close']}"})
+        return {"date": trade_date.isoformat(), "bars": len(rows),
+                "official_bars": szse_count, "latest_official_import_rows": expected_szse_rows,
+                "issue_count": len(issues), "issues": issues[:100],
+                "truncated": len(issues) > 100,
+                "note": "只检查已有行情；未建立交易日历，不能据此认定休市或历史数据完整"}

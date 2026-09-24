@@ -3,7 +3,6 @@ import time
 
 from .database import Database
 from .providers import BaoStockProvider, SzseProvider
-from .publication import PublicationService
 
 
 class IngestionService:
@@ -44,13 +43,8 @@ class IngestionService:
             raise RuntimeError("No SZSE instruments in database. Run sync-szse-master first.")
 
         run_id = self.db.start_run("SZSE", "stock_snapshot", trade_date, trade_date)
-        publication = PublicationService(self.db)
         try:
-            # Mark this date unreviewed BEFORE replacing any canonical values.
-            publication.stage(trade_date, run_id)
             result = self.szse.fetch_daily_snapshot(trade_date)
-            if any(bar.trade_date != trade_date for bar in result.records):
-                raise ValueError("SZSE returned records outside the requested snapshot date")
             artifact_id = self.db.add_raw_artifact(
                 run_id,
                 "SZSE",
@@ -75,7 +69,6 @@ class IngestionService:
             return count
         except Exception as exc:
             self.db.fail_run(run_id, exc)
-            publication.fail_import(trade_date, run_id, str(exc))
             raise
 
     def bootstrap_baostock(
