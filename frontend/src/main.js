@@ -21,6 +21,8 @@ const state = {
   directoryHasMore: false,
   directoryQuery: "",
   directoryTimer: null,
+  maEnabled: new Set([5, 10, 20]),
+  maByDate: new Map(),
 };
 
 function escapeHtml(value) {
@@ -98,10 +100,14 @@ function shell() {
     '        </div>',
     '        <section class="content-card chart-card"><div class="section-heading"><div><div class="section-eyebrow">PRICE &amp; VOLUME</div><div class="section-title"><h2 id="chart-title">日 K 线</h2><span class="section-subtitle" id="chart-subtitle">正在读取行情…</span></div></div><div class="range-buttons" role="group" aria-label="图表时间范围"><button data-range="1M">1月</button><button data-range="3M" class="active">3月</button><button data-range="6M">6月</button><button data-range="1Y">1年</button><button data-range="ALL">当前段全部</button></div></div>',
     '          <div class="chart-legend"><span><i class="legend-candle"></i> 未复权价格 (CNY)</span><span><i class="legend-volume"></i> 成交量 (股)</span><span class="legend-hint">横向滚动查看更早日期 · 悬停查看明细</span></div>',
+    '          <div class="ma-toolbar"><span>移动平均线</span><button type="button" data-ma="5" aria-pressed="true" class="ma-toggle active ma-five"><i></i> MA5</button><button type="button" data-ma="10" aria-pressed="true" class="ma-toggle active ma-ten"><i></i> MA10</button><button type="button" data-ma="20" aria-pressed="true" class="ma-toggle active ma-twenty"><i></i> MA20</button><span class="ma-caption">按已加载收盘价计算 · 样本不足时不显示</span></div>',
     '          <div id="hover-details" class="hover-details">选择股票后展示行情</div>',
     '          <div class="chart-viewport" id="chart-viewport"><div id="chart" class="chart-empty">正在读取日线…</div></div>',
     '          <div class="chart-footer"><span id="chart-range">—</span><span>↑ 红涨 &nbsp; ↓ 绿跌</span></div>',
     '          <div class="history-navigation"><button id="history-older" disabled>← 更早 750 条</button><span id="history-status" aria-live="polite">正在读取历史…</span><button id="history-newer" disabled>较新 750 条 →</button></div>',
+    '        </section>',
+    '        <section class="content-card list-card"><div class="section-heading"><div><div class="section-eyebrow">DAILY DETAILS</div><div class="section-title"><h2>日线明细</h2><span class="section-subtitle" id="daily-details-range">当前图表区间内最近 20 条</span></div></div><span class="table-note">全部数值来自数据库 · 未复权</span></div>',
+    '          <div class="table-wrap"><table class="stocks-table daily-details-table"><thead><tr><th>日期</th><th>开盘</th><th>最高</th><th>最低</th><th>收盘</th><th>涨跌幅</th><th>成交量（股）</th><th>成交额（元）</th><th>来源</th></tr></thead><tbody id="daily-details-rows"><tr><td colspan="9" class="empty-row">正在读取日线…</td></tr></tbody></table></div>',
     '        </section>',
     '        <section class="content-card list-card"><div class="section-heading"><div><div class="section-eyebrow">MARKET SNAPSHOT</div><div class="section-title"><h2>行情概览</h2><span class="section-subtitle" id="market-subtitle">读取已入库数据…</span></div></div><span class="table-note">按已入库股票的成交额排序</span></div>',
     '          <div class="table-wrap"><table class="stocks-table"><thead><tr><th>股票</th><th>收盘价</th><th>涨跌幅</th><th>成交额</th><th>来源</th><th></th></tr></thead><tbody id="market-rows"><tr><td colspan="6" class="empty-row">正在载入…</td></tr></tbody></table></div>',
@@ -135,6 +141,16 @@ function shell() {
       renderChart();
     })
   );
+  root.querySelectorAll("[data-ma]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const period = Number(button.dataset.ma);
+      if (state.maEnabled.has(period)) state.maEnabled.delete(period);
+      else state.maEnabled.add(period);
+      button.classList.toggle("active", state.maEnabled.has(period));
+      button.setAttribute("aria-pressed", String(state.maEnabled.has(period)));
+      renderChart();
+    });
+  });
   root.querySelector("#history-older").addEventListener("click", loadOlder);
   root.querySelector("#history-newer").addEventListener("click", showNewer);
   root.querySelector("#market-rows").addEventListener("click", (event) => {
@@ -226,6 +242,9 @@ async function selectStock(code) {
   state.nextEnd = null;
   state.loadingOlder = false;
   state.range = "3M";
+  state.maByDate = new Map();
+  root.querySelector("#daily-details-rows").innerHTML =
+    '<tr><td colspan="9" class="empty-row">正在读取日线…</td></tr>';
   root.querySelector("#stock-search").value = "";
   hideSuggestions();
   switchView("dashboard");
@@ -261,6 +280,8 @@ async function selectStock(code) {
     root.querySelector("#chart").innerHTML = '<div class="chart-empty">暂时无法读取这只股票：' +
       escapeHtml(error.message) + '</div>';
     root.querySelector("#hover-details").textContent = "请确认数据库与后端 API 已启动";
+    root.querySelector("#daily-details-rows").innerHTML =
+      '<tr><td colspan="9" class="empty-row">日线读取失败</td></tr>';
     updateHistoryNavigation();
   }
 }
@@ -374,12 +395,60 @@ function visibleBars() {
   return page.filter((bar) => bar.trade_date >= cutoff);
 }
 
+function renderDailyRows(bars) {
+  const selected = bars.slice(-20).reverse();
+  root.querySelector("#daily-details-range").textContent = bars.length
+    ? "当前图表区间 " + bars.length + " 条 · 显示最近 " + selected.length + " 条"
+    : "当前图表区间没有已入库日线";
+  root.querySelector("#daily-details-rows").innerHTML = selected.length ? selected.map((bar) => {
+    const preClose = number(bar.pre_close);
+    const close = number(bar.close);
+    const pct = preClose !== null && preClose > 0 && close !== null
+      ? (close / preClose - 1) * 100 : bar.pct_change;
+    return '<tr><td class="num strong">' + escapeHtml(bar.trade_date) +
+      '</td><td class="num">' + price(bar.open) +
+      '</td><td class="num">' + price(bar.high) +
+      '</td><td class="num">' + price(bar.low) +
+      '</td><td class="num strong">' + price(bar.close) +
+      '</td><td class="num ' + direction(pct, 0) + '">' + percent(pct) +
+      '</td><td class="num">' + amount(bar.volume_shares) +
+      '</td><td class="num">' + amount(bar.turnover_cny) +
+      '</td><td><span class="table-source">' + escapeHtml(bar.selected_source || "—") +
+      '</span></td></tr>';
+  }).join("") : '<tr><td colspan="9" class="empty-row">此区间暂无日线数据</td></tr>';
+}
+
+function movingAverages() {
+  // Include already cached older pages when available, to maintain MA continuity
+  // across page boundaries without making extra requests.
+  const older = state.pages.slice(state.pageIndex + 1).reverse().flat();
+  const current = state.pages[state.pageIndex] || [];
+  const history = older.concat(current);
+  const result = new Map();
+  const periods = [5, 10, 20];
+  for (let i = 0; i < history.length; i += 1) {
+    const averages = {};
+    for (const period of periods) {
+      if (i + 1 < period) { averages[period] = null; continue; }
+      const values = history.slice(i + 1 - period, i + 1).map((bar) => number(bar.close));
+      averages[period] = values.every((value) => value !== null && Number.isFinite(value) && value > 0)
+        ? values.reduce((sum, value) => sum + value, 0) / period : null;
+    }
+    result.set(history[i].trade_date, averages);
+  }
+  return result;
+}
+
 function showBarDetails(bar) {
   root.querySelector("#hover-details").innerHTML = '<span class="hover-date">' + escapeHtml(bar.trade_date) +
     '</span><span>开 <b>' + price(bar.open) + '</b></span><span>高 <b>' + price(bar.high) +
     '</b></span><span>低 <b>' + price(bar.low) + '</b></span><span>收 <b>' +
     price(bar.close) + '</b></span><span>成交量 <b>' + amount(bar.volume_shares, "股") +
-    '</b></span><span class="source-label">' + escapeHtml(bar.selected_source || "未知来源") + '</span>';
+    '</b></span><span class="source-label">' + escapeHtml(bar.selected_source || "未知来源") + '</span>' +
+    [5, 10, 20].filter((period) => state.maEnabled.has(period)).map((period) =>
+      '<span class="ma-detail ma-detail-' + period + '">MA' + period + ' <b>' +
+      price(state.maByDate.get(bar.trade_date)?.[period]) + '</b></span>'
+    ).join("");
 }
 
 function renderChart() {
@@ -387,6 +456,8 @@ function renderChart() {
   const viewport = root.querySelector("#chart-viewport");
   const chart = root.querySelector("#chart");
   const bars = visibleBars();
+  renderDailyRows(bars);
+  state.maByDate = movingAverages();
   root.querySelector("#chart-range").textContent = bars.length
     ? bars[0].trade_date + " — " + bars.at(-1).trade_date + " · " + bars.length + " 条"
     : "当前时间范围暂无数据";
@@ -408,8 +479,12 @@ function renderChart() {
   const plotWidth = width - marginL - marginR;
   const step = plotWidth / valid.length;
   const bodyWidth = Math.max(3, Math.min(13, step * 0.64));
-  let low = Math.min(...valid.map((bar) => Number(bar.low)));
-  let high = Math.max(...valid.map((bar) => Number(bar.high)));
+  const maValues = valid.flatMap((bar) =>
+    [...state.maEnabled].map((period) => state.maByDate.get(bar.trade_date)?.[period])
+      .filter((value) => value !== null && value !== undefined && Number.isFinite(value))
+  );
+  let low = Math.min(...valid.map((bar) => Number(bar.low)), ...maValues);
+  let high = Math.max(...valid.map((bar) => Number(bar.high)), ...maValues);
   const margin = Math.max((high - low) * 0.08, high * 0.002, 0.01);
   low -= margin;
   high += margin;
@@ -451,6 +526,23 @@ function renderChart() {
         escapeHtml(bar.trade_date.slice(5)) + '</text>');
     }
   });
+  for (const period of [5, 10, 20]) {
+    if (!state.maEnabled.has(period)) continue;
+    const segments = [];
+    let points = [];
+    const flush = () => {
+      if (points.length >= 2) segments.push('<polyline class="ma-path ma-path-' + period +
+        '" points="' + points.join(" ") + '"/>');
+      points = [];
+    };
+    valid.forEach((bar, i) => {
+      const average = state.maByDate.get(bar.trade_date)?.[period];
+      if (average === null || average === undefined) { flush(); return; }
+      points.push((marginL + step * (i + 0.5)).toFixed(2) + "," + scaleY(average).toFixed(2));
+    });
+    flush();
+    shapes.push(...segments);
+  }
   chart.innerHTML = '<svg class="candle-svg" viewBox="0 0 ' + width + ' 393" width="' +
     width + '" height="393" role="img" aria-label="' + escapeHtml(state.selected) +
     ' 未复权日 K 线与成交量">' + shapes.join("") + '</svg>';
