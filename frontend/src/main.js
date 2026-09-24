@@ -76,14 +76,14 @@ function shell() {
     '      <div class="search-box"><span class="search-icon">⌕</span><input id="stock-search" type="search" placeholder="搜索股票代码或名称…" autocomplete="off" aria-label="搜索股票" /><span class="search-shortcut">SZ</span>',
     '        <div id="search-results" class="search-results" hidden></div>',
     '      </div>',
-    '      <div class="topbar-right"><span class="market-dot"></span><span>深圳市场</span><span class="topbar-divider"></span><span id="last-date">读取数据库中…</span></div>',
+    '      <button class="mobile-about" id="mobile-toggle-about">数据说明</button><div class="topbar-right"><span class="market-dot"></span><span>深圳市场</span><span class="topbar-divider"></span><span id="last-date">读取数据库中…</span></div>',
     '    </header>',
     '    <main class="main-content">',
     '      <section id="dashboard-view">',
     '        <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> STOCK MARKET DASHBOARD</div><h1>市场数据，一目了然<span class="heading-period">.</span></h1><p>探索已入库的深市股票、历史价格与成交趋势。</p></div><span class="history-pill"><span class="history-dot"></span>历史行情 · 非实时</span></div>',
     '        <div id="connection-error" class="notice" hidden></div>',
     '        <div class="overview-grid">',
-    '          <article class="metric-card"><div class="metric-title">当前股票 <span>01 / STOCK</span></div><div class="metric-main"><strong id="selected-name">加载中…</strong><span id="selected-symbol" class="metric-code">000001.SZ</span></div><div class="metric-foot"><span id="selected-industry">深市证券</span><span class="mini-sparkline">▁▃▂▅▃▆▇</span></div></article>',
+    '          <article class="metric-card"><div class="metric-title">当前股票 <span>01 / STOCK</span></div><div class="metric-main"><strong id="selected-name">加载中…</strong><span id="selected-symbol" class="metric-code">000001.SZ</span></div><div class="metric-foot"><span id="selected-industry">深市证券</span><span>未复权 · 日线</span></div></article>',
     '          <article class="metric-card"><div class="metric-title">最近收盘 <span>02 / CLOSE</span></div><div class="metric-main"><strong id="latest-close">—</strong><span class="metric-unit">CNY</span></div><div class="metric-foot"><span id="latest-change">等待历史数据</span><span id="latest-close-date">—</span></div></article>',
     '          <article class="metric-card"><div class="metric-title">日线记录 <span>03 / HISTORY</span></div><div class="metric-main"><strong id="bar-count">—</strong><span class="metric-unit">条</span></div><div class="metric-foot"><span>当前加载窗口</span><span id="source-tag">—</span></div></article>',
     '        </div>',
@@ -126,6 +126,7 @@ function shell() {
     if (button) selectStock(button.dataset.symbol);
   });
   root.querySelector("#back-to-dashboard").addEventListener("click", () => switchView("dashboard"));
+  root.querySelector("#mobile-toggle-about").addEventListener("click", () => switchView(state.view === "about" ? "dashboard" : "about"));
   const search = root.querySelector("#stock-search");
   search.addEventListener("input", () => {
     clearTimeout(state.searchTimer);
@@ -157,6 +158,7 @@ function switchView(view) {
   root.querySelectorAll("[data-view]").forEach((item) =>
     item.classList.toggle("active", item.dataset.view === view)
   );
+  root.querySelector("#mobile-toggle-about").textContent = view === "about" ? "返回行情" : "数据说明";
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -368,6 +370,8 @@ async function loadMarket() {
     ).join("") : '<tr><td colspan="6" class="empty-row">当前数据库没有可展示的行情</td></tr>';
   } catch (error) {
     root.querySelector("#last-date").textContent = "API 未连接";
+    root.querySelector(".status-orb").classList.add("offline");
+    root.querySelector(".market-dot").classList.add("offline");
     root.querySelector("#market-rows").innerHTML =
       '<tr><td colspan="6" class="empty-row">无法读取数据库行情：' + escapeHtml(error.message) + '</td></tr>';
     const notice = root.querySelector("#connection-error");
