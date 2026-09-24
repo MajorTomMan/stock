@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 import time
 
 from .database import Database
@@ -54,7 +54,7 @@ class IngestionService:
                 result.sha256,
                 result.byte_size,
             )
-            bars = [bar for bar in result.records if bar.symbol in known]
+            bars = [bar for bar in result.records if bar.symbol in known and bar.trade_date == trade_date]
             count = self.db.write_daily_bars(bars, artifact_id)
             self.db.finish_run(
                 run_id,
@@ -70,6 +70,81 @@ class IngestionService:
         except Exception as exc:
             self.db.fail_run(run_id, exc)
             raise
+
+    def sync_szse_range(
+        self,
+        start: date,
+        end: date,
+        *,
+        batch_size: int = 30,
+        delay_seconds: float = 1.0,
+        force: bool = False,
+        retry_empty: bool = False,
+    ) -> dict:
+        """Import at most batch_size unprocessed weekdays in the requested date window.
+
+        Existing ingestion_run rows are the checkpoints: a zero-row response
+        records an attempted date, but does not prove that the exchange was closed.
+        Use retry_empty=True to recheck those dates on a subsequent invocation.
+        """
+        if start > end:
+            raise ValueError("--start must not be after --end")
+        if batch_size < 1:
+            raise ValueError("--batch-size must be >= 1")
+        if delay_seconds < 0:
+            raise ValueError("--delay must be >= 0")
+
+        processed = {} if force else self.db.processed_szse_snapshot_dates(start, end)
+        pending: list[date] = []
+        skipped_existing = 0
+        skipped_weekends = 0
+        calendar_day = start
+        while calendar_day <= end:
+            if calendar_day.weekday() >= 5:
+                skipped_weekends += 1
+            elif calendar_day in processed and (processed[calendar_day] > 0 or not retry_empty):
+                skipped_existing += 1
+            else:
+                pending.append(calendar_day)
+            calendar_day += timedelta(days=1)
+
+        selected = pending[:batch_size]
+        successful = 0
+        empty_dates: list[str] = []
+        failures: list[dict] = []
+        total_rows = 0
+
+        # Do not connect to the network when every date has already been handled.
+        for index, trade_date in enumerate(selected, 1):
+            try:
+                count = self.sync_szse_daily(trade_date)
+                successful += 1
+                total_rows += count
+                if count == 0:
+                    empty_dates.append(trade_date.isoformat())
+                    print(f"[SZSE] [{index}/{len(selected)}] {trade_date}: EMPTY (not verified as holiday)", flush=True)
+                else:
+                    print(f"[SZSE] [{index}/{len(selected)}] {trade_date}: {count} rows", flush=True)
+            except Exception as exc:
+                failures.append({"date": trade_date.isoformat(), "error": str(exc)})
+                print(f"[SZSE] [{index}/{len(selected)}] {trade_date}: FAILED: {exc}", flush=True)
+            if delay_seconds and index < len(selected):
+                time.sleep(delay_seconds)
+
+        return {
+            "requested_from": start.isoformat(),
+            "requested_to": end.isoformat(),
+            "skipped_weekends": skipped_weekends,
+            "already_processed": skipped_existing,
+            "pending_before_batch": len(pending),
+            "attempted": len(selected),
+            "successful_dates": successful,
+            "empty_dates": empty_dates,
+            "failed_dates": failures,
+            "rows": total_rows,
+            "remaining_pending": len(pending) - successful,
+            "note": "EMPTY means no accepted rows; it does not establish a holiday or complete historical coverage.",
+        }
 
     def bootstrap_baostock(
         self,

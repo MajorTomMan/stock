@@ -139,6 +139,22 @@ class Database:
             )
             return {(symbol, start, end) for symbol, start, end in cur.fetchall() if symbol}
 
+    def processed_szse_snapshot_dates(self, start: date, end: date) -> dict[date, int]:
+        """Most recent successful result per requested date; zero rows are not proof of a holiday."""
+        with self.connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT ON (requested_from) requested_from, row_count
+                FROM ingestion_run
+                WHERE provider='SZSE' AND dataset='stock_snapshot' AND status='SUCCESS'
+                  AND requested_from=requested_to
+                  AND requested_from BETWEEN %s AND %s
+                ORDER BY requested_from, id DESC
+                """,
+                (start, end),
+            )
+            return {trade_date: count for trade_date, count in cur.fetchall()}
+
     def write_daily_bars(self, bars: Iterable[DailyBar], raw_artifact_id: int | None = None) -> int:
         rows = list(bars)
         if not rows:
