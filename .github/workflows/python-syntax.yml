@@ -10,7 +10,6 @@ on:
       - "backend/stock_data/**"
       - "backend/tests/**"
       - "backend/requirements.txt"
-      - "backend/README.md"
       - ".github/workflows/python-syntax.yml"
 
 jobs:
