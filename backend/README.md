@@ -95,4 +95,13 @@ python -m compileall -q stock_data tests
 python -m unittest discover -s tests -v
 ```
 
-数据质量目前仅具备基本的早期行情缺口记录；交易日历对齐、来源价格差异和日快照发布门槛尚未实现。
+## 轻量数据检查
+
+直接读取已经入库的日线与来源记录，不新增数据库表、审核状态或外部数据请求：
+
+```bash
+python -m stock_data.cli audit-daily --date 2025-09-01
+curl 'http://127.0.0.1:8000/api/quality/daily?date=2025-09-01'
+```
+
+检查现有 OHLC 价格关系、负成交量/金额、SZSE 与 BaoStock 收盘价差异，以及官方最近一次成功导入的条数是否与数据库现存官方行数相同。最多显示前 100 条问题。未填充权威交易日历，所以“NO_DATA”只表示数据库没数据，不能据此判断是否休市或真实缺口；历史完整性检查留待日后真正需要时做。

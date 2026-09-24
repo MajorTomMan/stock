@@ -3,7 +3,8 @@ name: Python syntax and unit checks
 on:
   push:
     branches:
-      - feature/market-data-v1
+      - master
+      - feature/data-quality-publication
   pull_request:
     paths:
       - "backend/stock_data/**"
