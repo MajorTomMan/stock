@@ -214,3 +214,19 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   .history-navigation button { flex: 1; }
   #history-status { order: -1; flex-basis: 100%; }
 }
+
+.directory-card { padding: 23px 23px 6px; }
+.directory-search { position: relative; display: flex; align-items: center; min-width: 235px; }
+.directory-search > span { position: absolute; left: 12px; font-size: 21px; color: #9ca4b0; }
+.directory-search input { width: 100%; min-width: 0; border: 1px solid #e9ebef; border-radius: 8px; background: #f8f9fa; padding: 11px 11px 11px 33px; font-size: 11px; color: #313c4c; }
+.directory-search input:focus { background: #fff; border-color: #ec9aa0; outline: 3px solid rgba(231, 58, 65, .08); }
+.directory-pagination { display: flex; justify-content: flex-end; align-items: center; gap: 16px; border-top: 1px solid #f1f2f4; padding: 16px 3px; }
+.directory-pagination button { background: #fff; color: #596574; border: 1px solid #e7e9ee; border-radius: 8px; padding: 9px 12px; font-size: 11px; font-weight: 750; }
+.directory-pagination button:not(:disabled):hover { color: #de434c; border-color: #f2c1c5; background: #fff3f4; }
+.directory-pagination button:disabled { opacity: .4; }
+#directory-page { color: #8c97a4; font-size: 11px; }
+@media (max-width: 640px) {
+  .directory-card { padding: 17px 12px 5px; }
+  .directory-search { flex: 1 1 100%; }
+  .directory-pagination { justify-content: space-between; gap: 8px; }
+}

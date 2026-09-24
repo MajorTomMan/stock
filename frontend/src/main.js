@@ -16,6 +16,11 @@ const state = {
   stockRequest: 0,
   searchRequest: 0,
   searchTimer: null,
+  directoryRequest: 0,
+  directoryPage: 0,
+  directoryHasMore: false,
+  directoryQuery: "",
+  directoryTimer: null,
 };
 
 function escapeHtml(value) {
@@ -101,6 +106,10 @@ function shell() {
     '        <section class="content-card list-card"><div class="section-heading"><div><div class="section-eyebrow">MARKET SNAPSHOT</div><div class="section-title"><h2>行情概览</h2><span class="section-subtitle" id="market-subtitle">读取已入库数据…</span></div></div><span class="table-note">按已入库股票的成交额排序</span></div>',
     '          <div class="table-wrap"><table class="stocks-table"><thead><tr><th>股票</th><th>收盘价</th><th>涨跌幅</th><th>成交额</th><th>来源</th><th></th></tr></thead><tbody id="market-rows"><tr><td colspan="6" class="empty-row">正在载入…</td></tr></tbody></table></div>',
     '        </section>',
+    '        <section class="content-card directory-card" id="stock-directory"><div class="section-heading"><div><div class="section-eyebrow">STOCK DIRECTORY</div><div class="section-title"><h2>股票目录</h2><span class="section-subtitle">浏览主数据中的全部深市证券，包括尚未补齐最新行情的股票</span></div></div><label class="directory-search"><span>⌕</span><input id="directory-filter" type="search" maxlength="128" placeholder="按代码或名称筛选…" aria-label="筛选股票目录" /></label></div>',
+    '          <div class="table-wrap"><table class="stocks-table directory-table"><thead><tr><th>股票</th><th>板块</th><th>上市日期</th><th>状态</th><th></th></tr></thead><tbody id="directory-rows"><tr><td colspan="5" class="empty-row">正在读取股票目录…</td></tr></tbody></table></div>',
+    '          <div class="directory-pagination"><button id="directory-prev" disabled>← 上一页</button><span id="directory-page" aria-live="polite">—</span><button id="directory-next" disabled>下一页 →</button></div>',
+    '        </section>',
     '        <footer class="footer"><span>STOCKROOM / 深市历史数据工作台</span><span>仅供研究与数据展示 · 非实时行情</span></footer>',
     '      </section>',
     '      <section id="about-view" class="about-view" hidden><div class="eyebrow"><span class="eyebrow-line"></span> ABOUT THE DATA</div><h1>关于这里的数据<span class="heading-period">.</span></h1><p>这个工作台只读取你本机 PostgreSQL 中已经导入的历史行情，不会直接访问外部行情服务。</p>',
@@ -131,6 +140,21 @@ function shell() {
   root.querySelector("#market-rows").addEventListener("click", (event) => {
     const button = event.target.closest("[data-symbol]");
     if (button) selectStock(button.dataset.symbol);
+  });
+  root.querySelector("#directory-rows").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-directory-symbol]");
+    if (button) selectStock(button.dataset.directorySymbol);
+  });
+  root.querySelector("#directory-filter").addEventListener("input", (event) => {
+    clearTimeout(state.directoryTimer);
+    state.directoryQuery = event.target.value.trim();
+    state.directoryTimer = setTimeout(() => loadDirectory(0), 200);
+  });
+  root.querySelector("#directory-prev").addEventListener("click", () => {
+    if (state.directoryPage > 0) loadDirectory(state.directoryPage - 1);
+  });
+  root.querySelector("#directory-next").addEventListener("click", () => {
+    if (state.directoryHasMore) loadDirectory(state.directoryPage + 1);
   });
   root.querySelector("#back-to-dashboard").addEventListener("click", () => switchView("dashboard"));
   root.querySelector("#mobile-toggle-about").addEventListener("click", () => switchView(state.view === "about" ? "dashboard" : "about"));
@@ -446,6 +470,47 @@ function renderChart() {
   viewport.scrollLeft = viewport.scrollWidth;
 }
 
+async function loadDirectory(page = 0) {
+  const serial = ++state.directoryRequest;
+  const prev = root.querySelector("#directory-prev");
+  const next = root.querySelector("#directory-next");
+  const info = root.querySelector("#directory-page");
+  const tbody = root.querySelector("#directory-rows");
+  prev.disabled = true;
+  next.disabled = true;
+  info.textContent = "读取第 " + (page + 1) + " 页…";
+  try {
+    const q = state.directoryQuery;
+    const data = await api("/api/instruments?limit=21&offset=" + (page * 20) +
+      "&q=" + encodeURIComponent(q));
+    if (serial !== state.directoryRequest) return;
+    state.directoryPage = page;
+    state.directoryHasMore = data.items.length > 20;
+    const rows = data.items.slice(0, 20);
+    tbody.innerHTML = rows.length ? rows.map((item) =>
+      '<tr><td><button class="stock-cell" data-directory-symbol="' + escapeHtml(item.symbol) +
+      '"><span class="stock-avatar">' + escapeHtml(item.symbol.slice(0, 2)) +
+      '</span><span><b>' + escapeHtml(item.current_name || "未命名证券") +
+      '</b><small>' + escapeHtml(item.symbol) + '.SZ</small></span></button></td><td>' +
+      escapeHtml(item.board || "—") + '</td><td class="num">' +
+      escapeHtml(item.list_date || "—") + '</td><td><span class="table-source">' +
+      escapeHtml(item.status || "UNKNOWN") + '</span></td><td><button class="row-go" data-directory-symbol="' +
+      escapeHtml(item.symbol) + '" aria-label="查看 ' + escapeHtml(item.symbol) +
+      '">↗</button></td></tr>'
+    ).join("") : '<tr><td colspan="5" class="empty-row">没有符合条件的股票</td></tr>';
+    info.textContent = "第 " + (page + 1) + " 页 · " + rows.length + " 只";
+    prev.disabled = page === 0;
+    next.disabled = !state.directoryHasMore;
+  } catch (error) {
+    if (serial !== state.directoryRequest) return;
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-row">股票目录读取失败：' +
+      escapeHtml(error.message) + '</td></tr>';
+    info.textContent = "读取失败";
+    prev.disabled = true;
+    next.disabled = true;
+  }
+}
+
 async function loadMarket() {
   try {
     const result = await api("/api/market/overview?limit=30");
@@ -480,4 +545,5 @@ async function loadMarket() {
 
 shell();
 loadMarket();
+loadDirectory();
 selectStock(state.selected);
