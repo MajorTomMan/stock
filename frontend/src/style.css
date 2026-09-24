@@ -203,3 +203,14 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .status-orb.offline, .market-dot.offline { background: #e5484d; }
 .mobile-about { display: none; border: 1px solid #e9ebef; border-radius: 7px; padding: 7px 10px; background: #fff; color: #7b8593; font-size: 10px; }
 @media (max-width: 640px) { .mobile-about { display: block; margin-left: auto; } .topbar-right { margin-left: 0; } }
+
+.history-navigation { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 0 4px; border-top: 1px solid #f1f2f4; margin-top: 13px; }
+.history-navigation button { border: 1px solid #e7e9ee; border-radius: 8px; padding: 9px 13px; color: #596473; background: #fff; font-size: 11px; font-weight: 700; }
+.history-navigation button:not(:disabled):hover { color: #dc3e48; border-color: #f0c0c4; background: #fff3f4; }
+.history-navigation button:disabled { opacity: .45; }
+#history-status { color: #929aa6; text-align: center; font-size: 10px; line-height: 1.6; }
+@media (max-width: 640px) {
+  .history-navigation { flex-wrap: wrap; gap: 9px; }
+  .history-navigation button { flex: 1; }
+  #history-status { order: -1; flex-basis: 100%; }
+}

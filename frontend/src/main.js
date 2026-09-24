@@ -4,7 +4,12 @@ const root = document.querySelector("#app");
 const state = {
   selected: "000001",
   instrument: null,
-  bars: [],
+  bars: [],               // Latest page for summary cards
+  pages: [],              // Cached history pages: newest first
+  pageIndex: 0,
+  hasMore: false,
+  nextEnd: null,
+  loadingOlder: false,
   market: null,
   range: "3M",
   view: "dashboard",
@@ -12,7 +17,6 @@ const state = {
   searchRequest: 0,
   searchTimer: null,
 };
-const svgNs = "http://www.w3.org/2000/svg";
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) =>
@@ -85,13 +89,14 @@ function shell() {
     '        <div class="overview-grid">',
     '          <article class="metric-card"><div class="metric-title">当前股票 <span>01 / STOCK</span></div><div class="metric-main"><strong id="selected-name">加载中…</strong><span id="selected-symbol" class="metric-code">000001.SZ</span></div><div class="metric-foot"><span id="selected-industry">深市证券</span><span>未复权 · 日线</span></div></article>',
     '          <article class="metric-card"><div class="metric-title">最近收盘 <span>02 / CLOSE</span></div><div class="metric-main"><strong id="latest-close">—</strong><span class="metric-unit">CNY</span></div><div class="metric-foot"><span id="latest-change">等待历史数据</span><span id="latest-close-date">—</span></div></article>',
-    '          <article class="metric-card"><div class="metric-title">日线记录 <span>03 / HISTORY</span></div><div class="metric-main"><strong id="bar-count">—</strong><span class="metric-unit">条</span></div><div class="metric-foot"><span>当前加载窗口</span><span id="source-tag">—</span></div></article>',
+    '          <article class="metric-card"><div class="metric-title">日线记录 <span>03 / HISTORY</span></div><div class="metric-main"><strong id="bar-count">—</strong><span class="metric-unit">条</span></div><div class="metric-foot"><span>当前已加载</span><span id="source-tag">—</span></div></article>',
     '        </div>',
-    '        <section class="content-card chart-card"><div class="section-heading"><div><div class="section-eyebrow">PRICE &amp; VOLUME</div><div class="section-title"><h2 id="chart-title">日 K 线</h2><span class="section-subtitle" id="chart-subtitle">正在读取行情…</span></div></div><div class="range-buttons" role="group" aria-label="图表时间范围"><button data-range="1M">1月</button><button data-range="3M" class="active">3月</button><button data-range="6M">6月</button><button data-range="1Y">1年</button><button data-range="ALL">全部已加载</button></div></div>',
+    '        <section class="content-card chart-card"><div class="section-heading"><div><div class="section-eyebrow">PRICE &amp; VOLUME</div><div class="section-title"><h2 id="chart-title">日 K 线</h2><span class="section-subtitle" id="chart-subtitle">正在读取行情…</span></div></div><div class="range-buttons" role="group" aria-label="图表时间范围"><button data-range="1M">1月</button><button data-range="3M" class="active">3月</button><button data-range="6M">6月</button><button data-range="1Y">1年</button><button data-range="ALL">当前段全部</button></div></div>',
     '          <div class="chart-legend"><span><i class="legend-candle"></i> 未复权价格 (CNY)</span><span><i class="legend-volume"></i> 成交量 (股)</span><span class="legend-hint">横向滚动查看更早日期 · 悬停查看明细</span></div>',
     '          <div id="hover-details" class="hover-details">选择股票后展示行情</div>',
     '          <div class="chart-viewport" id="chart-viewport"><div id="chart" class="chart-empty">正在读取日线…</div></div>',
     '          <div class="chart-footer"><span id="chart-range">—</span><span>↑ 红涨 &nbsp; ↓ 绿跌</span></div>',
+    '          <div class="history-navigation"><button id="history-older" disabled>← 更早 750 条</button><span id="history-status" aria-live="polite">正在读取历史…</span><button id="history-newer" disabled>较新 750 条 →</button></div>',
     '        </section>',
     '        <section class="content-card list-card"><div class="section-heading"><div><div class="section-eyebrow">MARKET SNAPSHOT</div><div class="section-title"><h2>行情概览</h2><span class="section-subtitle" id="market-subtitle">读取已入库数据…</span></div></div><span class="table-note">按已入库股票的成交额排序</span></div>',
     '          <div class="table-wrap"><table class="stocks-table"><thead><tr><th>股票</th><th>收盘价</th><th>涨跌幅</th><th>成交额</th><th>来源</th><th></th></tr></thead><tbody id="market-rows"><tr><td colspan="6" class="empty-row">正在载入…</td></tr></tbody></table></div>',
@@ -99,7 +104,7 @@ function shell() {
     '        <footer class="footer"><span>STOCKROOM / 深市历史数据工作台</span><span>仅供研究与数据展示 · 非实时行情</span></footer>',
     '      </section>',
     '      <section id="about-view" class="about-view" hidden><div class="eyebrow"><span class="eyebrow-line"></span> ABOUT THE DATA</div><h1>关于这里的数据<span class="heading-period">.</span></h1><p>这个工作台只读取你本机 PostgreSQL 中已经导入的历史行情，不会直接访问外部行情服务。</p>',
-    '        <div class="about-grid"><article class="content-card"><span class="about-num">01</span><h2>数据来源</h2><p>BaoStock 历史未复权日线及深圳证券交易所官方日快照。每条日线展示数据库选择的来源；股票尚未回填的日期不会生成模拟价格。</p></article><article class="content-card"><span class="about-num">02</span><h2>日期与范围</h2><p>概览日期是数据库中最后一个有记录的日期，不一定是今天。图表每次最多读取最近 750 条日线，“全部已加载”不代表上市以来的全部历史。</p></article><article class="content-card"><span class="about-num">03</span><h2>开发阶段</h2><p>当前功能是搜索、股票详情、未复权日 K 线、成交量和数据库行情概览；复权、交易日历与历史覆盖率检查尚未接入。</p></article></div>',
+    '        <div class="about-grid"><article class="content-card"><span class="about-num">01</span><h2>数据来源</h2><p>BaoStock 历史未复权日线及深圳证券交易所官方日快照。每条日线展示数据库选择的来源；股票尚未回填的日期不会生成模拟价格。</p></article><article class="content-card"><span class="about-num">02</span><h2>日期与范围</h2><p>概览日期是数据库中最后一个有记录的日期，不一定是今天。图表按段加载历史日线，每段最多 750 条。点击“更早”或“较新”切换区间；“当前段全部”仅展示本段数据，未采集的日期不会显示。</p></article><article class="content-card"><span class="about-num">03</span><h2>开发阶段</h2><p>当前功能是搜索、股票详情、未复权日 K 线、成交量和数据库行情概览；复权、交易日历与历史覆盖率检查尚未接入。</p></article></div>',
     '        <button class="return-button" id="back-to-dashboard">返回行情工作台 →</button>',
     '      </section>',
     '    </main>',
@@ -121,6 +126,8 @@ function shell() {
       renderChart();
     })
   );
+  root.querySelector("#history-older").addEventListener("click", loadOlder);
+  root.querySelector("#history-newer").addEventListener("click", showNewer);
   root.querySelector("#market-rows").addEventListener("click", (event) => {
     const button = event.target.closest("[data-symbol]");
     if (button) selectStock(button.dataset.symbol);
@@ -189,6 +196,11 @@ async function selectStock(code) {
   state.selected = code;
   state.instrument = null;
   state.bars = [];
+  state.pages = [];
+  state.pageIndex = 0;
+  state.hasMore = false;
+  state.nextEnd = null;
+  state.loadingOlder = false;
   state.range = "3M";
   root.querySelector("#stock-search").value = "";
   hideSuggestions();
@@ -203,6 +215,7 @@ async function selectStock(code) {
   root.querySelector("#selected-symbol").textContent = code + ".SZ";
   root.querySelector("#chart").innerHTML = '<div class="chart-empty">正在加载 ' + escapeHtml(code) + ' 的日线数据…</div>';
   root.querySelector("#hover-details").textContent = "正在读取…";
+  updateHistoryNavigation();
   try {
     const [instrument, history] = await Promise.all([
       api("/api/instruments/" + encodeURIComponent(code)),
@@ -211,6 +224,9 @@ async function selectStock(code) {
     if (serial !== state.stockRequest) return;
     state.instrument = instrument;
     state.bars = history.bars || [];
+    state.pages = state.bars.length ? [state.bars] : [];
+    state.hasMore = Boolean(history.has_more);
+    state.nextEnd = history.next_end || null;
     renderStock();
     renderChart();
   } catch (error) {
@@ -221,7 +237,85 @@ async function selectStock(code) {
     root.querySelector("#chart").innerHTML = '<div class="chart-empty">暂时无法读取这只股票：' +
       escapeHtml(error.message) + '</div>';
     root.querySelector("#hover-details").textContent = "请确认数据库与后端 API 已启动";
+    updateHistoryNavigation();
   }
+}
+
+function setHistoryRange(range) {
+  state.range = range;
+  root.querySelectorAll("[data-range]").forEach((item) =>
+    item.classList.toggle("active", item.dataset.range === state.range)
+  );
+}
+
+function updateHistoryNavigation(note = "") {
+  const older = root.querySelector("#history-older");
+  const newer = root.querySelector("#history-newer");
+  const pageCount = state.pages.length;
+  older.disabled = state.loadingOlder || !pageCount ||
+    (state.pageIndex + 1 >= pageCount && (!state.hasMore || !state.nextEnd));
+  newer.disabled = state.loadingOlder || state.pageIndex === 0;
+  older.textContent = state.loadingOlder ? "正在加载…" : "← 更早 750 条";
+  root.querySelector("#history-status").textContent = note || (pageCount
+    ? "第 " + (state.pageIndex + 1) + " 段 · 已加载 " +
+      state.pages.reduce((sum, page) => sum + page.length, 0).toLocaleString("zh-CN") +
+      " 条" + (state.pageIndex + 1 < pageCount || state.hasMore
+        ? " · 可继续向前查看" : " · 已到最早记录")
+    : "当前股票暂无历史数据");
+}
+
+async function loadOlder() {
+  if (state.loadingOlder || !state.pages.length) return;
+  if (state.pageIndex + 1 < state.pages.length) {
+    state.pageIndex += 1;
+    setHistoryRange("ALL");
+    renderChart();
+    return;
+  }
+  if (!state.hasMore || !state.nextEnd) return;
+
+  const serial = state.stockRequest;
+  const code = state.selected;
+  state.loadingOlder = true;
+  updateHistoryNavigation();
+  let errorNote = "";
+  try {
+    const history = await api("/api/instruments/" + encodeURIComponent(code) +
+      "/daily?limit=750&end=" + encodeURIComponent(state.nextEnd));
+    if (serial !== state.stockRequest) return;
+    const older = history.bars || [];
+    if (!older.length) {
+      state.hasMore = false;
+      state.nextEnd = null;
+      updateHistoryNavigation("没有更多已入库的历史行情");
+      return;
+    }
+    state.pages.push(older);
+    state.hasMore = Boolean(history.has_more);
+    state.nextEnd = history.next_end || null;
+    state.pageIndex += 1;
+    setHistoryRange("ALL");
+    root.querySelector("#bar-count").textContent = state.pages.reduce(
+      (sum, page) => sum + page.length, 0
+    ).toLocaleString("zh-CN");
+    renderChart();
+  } catch (error) {
+    if (serial === state.stockRequest) {
+      errorNote = "加载失败：" + error.message;
+    }
+  } finally {
+    if (serial === state.stockRequest) {
+      state.loadingOlder = false;
+      updateHistoryNavigation(errorNote);
+    }
+  }
+}
+
+function showNewer() {
+  if (state.loadingOlder || state.pageIndex === 0) return;
+  state.pageIndex -= 1;
+  setHistoryRange("ALL");
+  renderChart();
 }
 
 function renderStock() {
@@ -237,20 +331,23 @@ function renderStock() {
   const changeElement = root.querySelector("#latest-change");
   changeElement.textContent = pct === null || pct === undefined ? "最近交易日涨跌：—" : "最近交易日 " + percent(pct);
   changeElement.className = "metric-foot-change " + direction(pct, 0);
-  root.querySelector("#bar-count").textContent = state.bars.length.toLocaleString("zh-CN");
+  root.querySelector("#bar-count").textContent = state.pages.reduce(
+    (sum, page) => sum + page.length, 0
+  ).toLocaleString("zh-CN");
   root.querySelector("#source-tag").textContent = last?.selected_source || "暂无来源";
   root.querySelector("#chart-title").textContent = (item.current_name || item.symbol) + " · 日 K 线";
   root.querySelector("#chart-subtitle").textContent = item.symbol + ".SZ / 未复权历史行情";
 }
 
 function visibleBars() {
-  const last = state.bars.at(-1)?.trade_date;
-  if (!last || state.range === "ALL") return state.bars;
+  const page = state.pages[state.pageIndex] || [];
+  const last = page.at(-1)?.trade_date;
+  if (!last || state.range === "ALL") return page;
   const days = { "1M": 30, "3M": 90, "6M": 180, "1Y": 365 }[state.range];
   const from = new Date(last + "T00:00:00Z");
   from.setUTCDate(from.getUTCDate() - days);
   const cutoff = from.toISOString().slice(0, 10);
-  return state.bars.filter((bar) => bar.trade_date >= cutoff);
+  return page.filter((bar) => bar.trade_date >= cutoff);
 }
 
 function showBarDetails(bar) {
@@ -262,6 +359,7 @@ function showBarDetails(bar) {
 }
 
 function renderChart() {
+  updateHistoryNavigation();
   const viewport = root.querySelector("#chart-viewport");
   const chart = root.querySelector("#chart");
   const bars = visibleBars();
