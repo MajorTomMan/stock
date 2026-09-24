@@ -26,6 +26,18 @@ def main() -> None:
     daily = sub.add_parser("sync-szse-daily")
     daily.add_argument("--date", required=True, type=_parse_date)
 
+    range_parser = sub.add_parser("sync-szse-range", help="Import an SZSE daily snapshot date range in resumable batches")
+    range_parser.add_argument("--start", required=True, type=_parse_date)
+    range_parser.add_argument("--end", required=True, type=_parse_date)
+    range_parser.add_argument("--batch-size", type=int, default=30,
+                              help="Process at most N pending weekdays per invocation (default: 30)")
+    range_parser.add_argument("--delay", type=float, default=1.0,
+                              help="Seconds between daily requests (default: 1)")
+    range_parser.add_argument("--force", action="store_true",
+                              help="Fetch all dates again, including previously processed dates")
+    range_parser.add_argument("--retry-empty", action="store_true",
+                              help="Recheck previously processed weekdays with zero accepted rows")
+
     bootstrap = sub.add_parser("bootstrap-baostock")
     bootstrap.add_argument("--start", default="1991-01-01", type=_parse_date)
     bootstrap.add_argument("--end", required=True, type=_parse_date)
@@ -55,6 +67,16 @@ def main() -> None:
     if args.command == "sync-szse-daily":
         count = service.sync_szse_daily(args.date)
         print(json.dumps({"date": args.date.isoformat(), "rows": count}, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "sync-szse-range":
+        result = service.sync_szse_range(
+            args.start, args.end, batch_size=args.batch_size,
+            delay_seconds=args.delay, force=args.force, retry_empty=args.retry_empty,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if result["failed_dates"]:
+            raise SystemExit(1)
         return
 
     if args.command == "bootstrap-baostock":
