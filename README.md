@@ -6,7 +6,7 @@
 
 ```text
 stock/
-├── frontend/                # Vite 股票目录、搜索、历史 K 线、成交量与行情概览
+├── frontend/                # Vue 3 + Vite 股票目录、搜索、历史 K 线、成交量与行情概览
 ├── backend/
 │   ├── stock_data/
 │   │   ├── providers/       # BaoStock / 深交所原始数据采集

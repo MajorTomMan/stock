@@ -1,6 +1,6 @@
-# Stockroom · 行情网站（开发版）
+# Stockroom · Vue 3 行情网站（开发版）
 
-这是读取现有 PostgreSQL 行情 API 的前端：股票搜索、可翻页证券目录、详情、未复权日 K 线、成交量、已入库市场概览。**不使用模拟行情，不请求 BaoStock**。
+使用 Vue 3 + Vite + 原生 CSS / SVG，直接读取现有 PostgreSQL 行情 API：股票搜索、可翻页证券目录、详情、未复权日 K 线、成交量、已入库市场概览。**不使用模拟行情，不请求 BaoStock**。
 
 ## 启动
 
@@ -21,7 +21,24 @@ npm run dev
 
 浏览器打开 http://127.0.0.1:5173 。开发代理将 `/api` 与 `/health` 转发到本机 8000 端口；无需改变原 API 或启用跨域。注意两个终端运行时都需要 PostgreSQL 容器正常启动。
 
-`npm run build` 生成 `frontend/dist/` 静态文件。本阶段仅提供开发服务器，不包含公网部署配置。请勿将数据库密码放到前端环境变量中。
+`npm run build` 生成 `frontend/dist/` 静态文件。只需 `npm install` 安装 Vue 3 与 Vite，无需配置 Pinia 或 Vue Router。本阶段仅提供开发服务器，不包含公网部署配置。请勿将数据库密码放到前端环境变量中。
+
+## 前端结构
+
+```text
+src/
+├── App.vue                         # 工作台、搜索、股票选择与历史分页
+├── components/
+│   ├── CandleChart.vue             # K 线、成交量、均线和日线明细
+│   ├── MarketSnapshot.vue          # 数据库最新行情日概览
+│   └── StockDirectory.vue          # 股票目录与分页搜索
+├── api.js                          # 本地 FastAPI 请求
+├── format.js                       # 价格、涨跌幅与成交量格式
+├── style.css                       # 明色主题和移动端布局
+└── main.js                         # Vue 应用入口
+```
+
+本项目仍处于本地开发阶段，状态由 Vue 的 `ref` / `computed` 管理；目前不需要再引入 Pinia、路由或前端状态持久化层。旧的原生 DOM 事件脚本已替换为 Vue 组件，不再维护两套页面实现。
 
 ## 当前边界
 
@@ -32,4 +49,4 @@ npm run dev
 - 图表下方展示当前可见时间区间最新 20 条日线明细（开、高、低、收、涨跌幅、成交量、成交额及来源）。
 - 红色为上涨，绿色为下跌；成交量单位股，成交额单位人民币元。
 - 没有行情或 API 无法访问时，会明确展示空状态，不生成模拟价格。
-- 网站目前依赖 `master` 已有的查询 API；以后合并简化的 PR #2 后可追加轻量质检页面，不是首版阻塞项。
+- 网站目前依赖 `master` 已有的查询 API；与尚未合并的轻量质检 PR #2 无关，不阻塞日线查看。
