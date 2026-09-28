@@ -125,8 +125,12 @@ class Database:
     def known_symbols(self, exchange: str = "SZSE") -> set[str]:
         return {row[1] for row in self.list_instruments(exchange)}
 
-    def completed_history_jobs(self) -> set[tuple[str, date, date]]:
-        """Successful per-symbol windows: only an exact match is safe to skip."""
+    def completed_history_jobs(self, exchange: str = "SZSE") -> set[tuple[str, date, date]]:
+        """Successful per-symbol windows for one exchange.
+
+        Older rows predate exchange metadata and are preserved as SZSE checkpoints.
+        """
+        exchange = exchange.upper()
         with self.connect() as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -135,7 +139,12 @@ class Database:
                 WHERE provider='BAOSTOCK' AND dataset='daily_history'
                   AND status='SUCCESS' AND metadata ? 'symbol'
                   AND requested_from IS NOT NULL AND requested_to IS NOT NULL
-                """
+                  AND (
+                    metadata->>'exchange'=%s
+                    OR (%s='SZSE' AND NOT metadata ? 'exchange')
+                  )
+                """,
+                (exchange, exchange),
             )
             return {(symbol, start, end) for symbol, start, end in cur.fetchall() if symbol}
 

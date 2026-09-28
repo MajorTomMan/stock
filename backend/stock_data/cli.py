@@ -1,11 +1,12 @@
 import argparse
 import json
+import re
 from datetime import date
 
 from .config import Settings
 from .database import Database
 from .ingestion import IngestionService
-from .providers import SzseProvider
+from .providers import SseProvider, SzseProvider
 
 
 def _parse_date(value: str) -> date:
@@ -13,7 +14,10 @@ def _parse_date(value: str) -> date:
 
 
 def _normalize_code(value: str) -> str:
-    return value.upper().replace(".SZ", "").strip().zfill(6)
+    digits = re.sub(r"\D", "", value.strip())
+    if not digits:
+        raise argparse.ArgumentTypeError(f"Invalid stock code: {value}")
+    return digits.zfill(6)
 
 
 def main() -> None:
@@ -22,11 +26,14 @@ def main() -> None:
 
     sub.add_parser("migrate")
     sub.add_parser("sync-szse-master")
+    sub.add_parser("sync-sse-master")
+    sub.add_parser("sync-sse-daily", help="Import the latest SSE official market snapshot")
 
     daily = sub.add_parser("sync-szse-daily")
     daily.add_argument("--date", required=True, type=_parse_date)
 
     bootstrap = sub.add_parser("bootstrap-baostock")
+    bootstrap.add_argument("--exchange", choices=["SZSE", "SSE"], default="SZSE")
     bootstrap.add_argument("--start", default="1991-01-01", type=_parse_date)
     bootstrap.add_argument("--end", required=True, type=_parse_date)
     bootstrap.add_argument("--codes", nargs="*")
@@ -45,11 +52,18 @@ def main() -> None:
         print("database migrations applied")
         return
 
-    szse = SzseProvider(settings.raw_data_dir, settings.http_timeout_seconds)
-    service = IngestionService(db, szse)
+    service = IngestionService(
+        db,
+        SzseProvider(settings.raw_data_dir, settings.http_timeout_seconds),
+        SseProvider(settings.raw_data_dir, settings.http_timeout_seconds),
+    )
 
     if args.command == "sync-szse-master":
         print(json.dumps(service.sync_szse_master(), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "sync-sse-master":
+        print(json.dumps(service.sync_sse_master(), ensure_ascii=False, indent=2))
         return
 
     if args.command == "sync-szse-daily":
@@ -57,11 +71,21 @@ def main() -> None:
         print(json.dumps({"date": args.date.isoformat(), "rows": count}, ensure_ascii=False, indent=2))
         return
 
+    if args.command == "sync-sse-daily":
+        print(json.dumps(service.sync_sse_daily(), ensure_ascii=False, indent=2))
+        return
+
     if args.command == "bootstrap-baostock":
         codes = {_normalize_code(code) for code in args.codes} if args.codes else None
         result = service.bootstrap_baostock(
-            args.start, args.end, codes, args.limit,
-            resume=not args.force, retries=args.retries, delay_seconds=args.delay,
+            args.start,
+            args.end,
+            codes,
+            args.limit,
+            exchange=args.exchange,
+            resume=not args.force,
+            retries=args.retries,
+            delay_seconds=args.delay,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
 
