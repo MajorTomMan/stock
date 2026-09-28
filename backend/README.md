@@ -1,6 +1,6 @@
-# Backend · 深市日线数据
+# Backend · 沪深 A 股日线数据
 
-当前阶段仅包含：SZSE 证券主数据与官方日快照、BaoStock 未复权历史回填、PostgreSQL 数据存储以及只读行情 API。**不包含**实时行情、交易或回测功能。
+当前阶段包含：SZSE/SSE 证券主数据、交易所官方日行情、BaoStock 未复权历史回填、PostgreSQL 数据存储以及只读行情 API。**不包含**实时行情、交易或回测功能。
 
 ## 项目职责
 
@@ -14,7 +14,7 @@
 | `tests/` | 不依赖数据库或网络的单元测试 |
 | `data/raw/szse/` | 下载的原始 XLSX（本机生成，已被 Git 忽略） |
 
-`market_daily_observation` 保存各来源原始规范化事实；`market_daily` 选择对外使用的日线。SZSE 来源优先级为 10，BaoStock 为 50，同一天的 BaoStock 记录不会覆盖已选中的 SZSE 记录。价格保留未复权形式；成交量为**股**，成交额为**元**；停牌记录中的 NULL 与 0 保持区别。
+`market_daily_observation` 保存各来源原始规范化事实；`market_daily` 选择对外使用的日线。SZSE/SSE 官方来源优先级均为 10，BaoStock 为 50，同一天的 BaoStock 记录不会覆盖已选中的交易所官方记录。价格保留未复权形式；成交量为**股**，成交额为**元**；停牌记录中的 NULL 与 0 保持区别。
 
 ## 启动（已有数据库无需删除或重新初始化）
 
@@ -40,6 +40,15 @@ python -m stock_data.cli sync-szse-master
 
 包括当前 A 股列表、退市证券、股票简称变更。启动时自动调用尚未应用的 migration；重复执行主数据同步会 upsert。
 
+同步上交所主板 A 股、科创板以及已退市证券：
+
+```bash
+python -m stock_data.cli sync-sse-master
+```
+
+沪市主数据来自上交所股票列表查询接口，主板与科创板都会写入现有 `instrument` 表，分别标记为 `MAIN` / `STAR`；无需新增数据库表。
+
+
 先选 3 只股票验证历史日线：
 
 ```bash
@@ -48,13 +57,25 @@ python -m stock_data.cli bootstrap-baostock \
   --codes 000001.SZ 000004.SZ 300001.SZ
 ```
 
-全深市按批回填（**保持相同日期范围**，重复执行该命令可跳过已成功的股票）：
+深市按批回填（`--exchange SZSE` 是默认值，**保持相同日期范围**即可断点续跑）：
 
 ```bash
 python -m stock_data.cli bootstrap-baostock \
   --start 1991-01-01 --end 2025-08-31 \
   --batch-size 50 --delay 10 --retries 1
 ```
+
+沪市使用同一个回填命令，只需切换交易所：
+
+```bash
+python -m stock_data.cli bootstrap-baostock \
+  --exchange SSE \
+  --start 1990-12-19 --end 2025-08-31 \
+  --batch-size 50 --delay 10 --retries 1
+```
+
+BaoStock 会按交易所映射为 `sz.<code>` 或 `sh.<code>`。新的断点记录会同时保存 exchange；历史版本已经完成但没有 exchange 字段的断点继续按 SZSE 识别，不会因为本次改造重新跑一遍深市。
+
 
 `--batch-size` 默认 50，控制每次最多处理多少只**待完成**股票；`--delay` 控制股票间的等待秒数；`--retries` 控制单只股票失败后的额外重试次数。上述 10 秒是近期连接异常后的保守排查设置，**不是 BaoStock 官方限流阈值**。
 
@@ -70,6 +91,15 @@ python -m stock_data.cli sync-szse-daily --date 2025-09-01
 
 官方快照接口可能对部分历史日期返回空结果；当天无数据并不等于休市。请核实日期和原始文件，而不是自动将零行标记为历史行情完整。
 
+导入上交所**最新交易时段/交易日**的官方市场快照：
+
+```bash
+python -m stock_data.cli sync-sse-daily
+```
+
+上交所公开行情接口返回的是当前最新市场快照，因此该命令故意不提供 `--date`：它会读取响应中的实际市场日期后入库。历史缺口继续由 BaoStock 回填。重复运行同一交易日会按现有 observation/canonical upsert 逻辑更新，不会制造重复日线。
+
+
 ## 只读 API
 
 ```bash
@@ -82,11 +112,13 @@ python -m uvicorn stock_data.api:app --host 127.0.0.1 --port 8000
 curl 'http://127.0.0.1:8000/health'
 curl 'http://127.0.0.1:8000/api/instruments?q=平安&limit=10'
 curl 'http://127.0.0.1:8000/api/instruments/000001'
+curl 'http://127.0.0.1:8000/api/instruments/600000.SH'
 curl 'http://127.0.0.1:8000/api/instruments/000001/daily?start=2025-08-01&end=2025-09-01&limit=100'
+curl 'http://127.0.0.1:8000/api/instruments/600000.SH/daily?limit=100'
 curl 'http://127.0.0.1:8000/api/market/overview?limit=30'
 ```
 
-日线默认获取查询窗口中最近 250 条、最多 5000 条，返回的 `bars` 按日期升序；`has_more=true` 时可用 `next_end` 查询更早记录。市场概览的 `as_of` 是**数据库已入库的最新日期**，不是实时行情。API 尚无鉴权，仅供本机开发。
+证券接口同时支持沪深 A 股，显式后缀可使用 `.SZ` / `.SH`；不带后缀时按数据库中的证券匹配。日线默认获取查询窗口中最近 250 条、最多 5000 条，返回的 `bars` 按日期升序；`has_more=true` 时可用 `next_end` 查询更早记录。市场概览的 `as_of` 是**数据库已入库的最新日期**，不是实时行情。API 尚无鉴权，仅供本机开发。
 
 ## 测试
 

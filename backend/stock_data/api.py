@@ -1,4 +1,4 @@
-"""Read-only HTTP API for canonical Shenzhen A-share market data.
+"""Read-only HTTP API for canonical Shenzhen and Shanghai A-share market data.
 
 Run from backend/: python -m uvicorn stock_data.api:app --host 127.0.0.1 --port 8000
 """
@@ -12,15 +12,26 @@ from .database import Database
 from .queries import MarketQueries
 
 
-app = FastAPI(title="Stock Market Data", version="0.2.0")
+app = FastAPI(title="Stock Market Data", version="0.3.0")
 queries = MarketQueries(Database(Settings.from_env().database_url))
 
 
-def _symbol(value: str) -> str:
-    symbol = value.upper().strip()
-    if not re.fullmatch(r"\d{6}(?:\.SZ)?", symbol):
-        raise HTTPException(status_code=422, detail="Expected six-digit SZSE symbol, e.g. 000001.SZ")
-    return symbol[:6]
+def _symbol(value: str) -> tuple[str, str | None]:
+    text = value.upper().strip()
+    match = re.fullmatch(r"(\d{6})(?:\.(SZ|SH|SZSE|SSE))?", text)
+    if not match:
+        raise HTTPException(status_code=422, detail="Expected six-digit A-share symbol, e.g. 000001.SZ or 600000.SH")
+    suffix = match.group(2)
+    exchange = None
+    if suffix in {"SZ", "SZSE"}:
+        exchange = "SZSE"
+    elif suffix in {"SH", "SSE"}:
+        exchange = "SSE"
+    return match.group(1), exchange
+
+
+def _display_symbol(symbol: str, exchange: str) -> str:
+    return symbol + (".SH" if exchange == "SSE" else ".SZ")
 
 
 @app.get("/health")
@@ -42,7 +53,8 @@ def list_instruments(q: str = Query(default="", max_length=128),
 
 @app.get("/api/instruments/{symbol}")
 def instrument_detail(symbol: str):
-    result = queries.get_instrument(_symbol(symbol))
+    code, exchange = _symbol(symbol)
+    result = queries.get_instrument(code, exchange)
     if result is None:
         raise HTTPException(status_code=404, detail="Instrument not found")
     return result
@@ -54,19 +66,22 @@ def instrument_daily(symbol: str,
                      end: date | None = None,
                      limit: int = Query(default=250, ge=1, le=5000)):
     """Newest N bars within the optional date window, returned oldest-to-newest."""
-    code = _symbol(symbol)
+    code, requested_exchange = _symbol(symbol)
     if start and end and start > end:
         raise HTTPException(status_code=422, detail="start must not be after end")
-    if queries.get_instrument(code) is None:
+    instrument = queries.get_instrument(code, requested_exchange)
+    if instrument is None:
         raise HTTPException(status_code=404, detail="Instrument not found")
 
-    rows = queries.get_daily(code, start, end, limit + 1)
+    exchange = instrument["exchange"]
+    rows = queries.get_daily(code, start, end, limit + 1, exchange)
     has_more = len(rows) > limit
-    rows = rows[:limit]  # SQL order is newest first
-    rows.reverse()       # chart-friendly ascending dates
+    rows = rows[:limit]
+    rows.reverse()
     next_end = rows[0]["trade_date"] - timedelta(days=1) if has_more and rows else None
     return {
-        "symbol": code + ".SZ",
+        "symbol": _display_symbol(code, exchange),
+        "exchange": exchange,
         "count": len(rows),
         "has_more": has_more,
         "next_end": next_end,
