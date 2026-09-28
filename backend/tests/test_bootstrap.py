@@ -25,7 +25,7 @@ class FakeDB:
             (3, "300001", date(2009, 10, 30), None),
         ]
 
-    def completed_history_jobs(self):
+    def completed_history_jobs(self, exchange="SZSE"):
         return self.done
 
     def start_run(self, provider, dataset, start, end, metadata=None):
@@ -49,6 +49,9 @@ class FakeProvider:
     name = "BAOSTOCK"
     seen = []
     fail_once = False
+
+    def __init__(self, exchange="SZSE"):
+        self.exchange = exchange
 
     def __enter__(self):
         return self
@@ -105,6 +108,11 @@ class BootstrapTests(TestCase):
 
 
 class LoginRetryTests(TestCase):
+    def test_exchange_code_mapping(self):
+        from stock_data.providers.baostock_provider import BaoStockProvider
+        self.assertEqual(BaoStockProvider("SZSE")._code("000001"), "sz.000001")
+        self.assertEqual(BaoStockProvider("SSE")._code("600000"), "sh.600000")
+
     def test_initial_login_recovers_from_network_receive_error(self):
         from stock_data.providers.baostock_provider import BaoStockProvider
         failures = [
