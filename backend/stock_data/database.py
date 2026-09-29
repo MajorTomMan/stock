@@ -6,7 +6,7 @@ from typing import Iterable
 import psycopg
 
 from .migrations import MIGRATIONS
-from .models import DailyBar, InstrumentRecord, NameChangeRecord
+from .models import ClassificationRecord, DailyBar, InstrumentRecord, NameChangeRecord, ShareCapitalRecord
 
 
 class Database:
@@ -115,6 +115,69 @@ class Database:
                     """,
                     (r.effective_date,r.before_name,r.after_name,r.source,r.exchange,r.symbol),
                 )
+        return len(rows)
+
+    def _resolve_instrument_ids(self, cur, records) -> dict[tuple[str, str], int]:
+        pairs = {(record.exchange, record.symbol) for record in records}
+        ids: dict[tuple[str, str], int] = {}
+        for exchange in sorted({exchange for exchange, _ in pairs}):
+            symbols = sorted(symbol for row_exchange, symbol in pairs if row_exchange == exchange)
+            if not symbols:
+                continue
+            cur.execute("SELECT id,symbol FROM instrument WHERE exchange=%s AND symbol=ANY(%s)", (exchange, symbols))
+            for instrument_id, symbol in cur.fetchall():
+                ids[(exchange, symbol)] = instrument_id
+        missing = sorted(pairs - set(ids))
+        if missing:
+            formatted = ", ".join(f"{exchange}:{symbol}" for exchange, symbol in missing[:20])
+            suffix = " ..." if len(missing) > 20 else ""
+            raise RuntimeError(f"Unknown instruments; sync master data first: {formatted}{suffix}")
+        return ids
+
+    def upsert_share_capital(self, records: Iterable[ShareCapitalRecord], raw_artifact_id: int | None = None) -> int:
+        rows = list(records)
+        if not rows:
+            return 0
+        sql = """
+            INSERT INTO share_capital_history(
+                instrument_id,effective_date,total_shares,float_shares,free_float_shares,source,raw_artifact_id,extra
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+            ON CONFLICT(instrument_id,effective_date,source) DO UPDATE SET
+                total_shares=COALESCE(EXCLUDED.total_shares,share_capital_history.total_shares),
+                float_shares=COALESCE(EXCLUDED.float_shares,share_capital_history.float_shares),
+                free_float_shares=COALESCE(EXCLUDED.free_float_shares,share_capital_history.free_float_shares),
+                raw_artifact_id=COALESCE(EXCLUDED.raw_artifact_id,share_capital_history.raw_artifact_id),
+                extra=EXCLUDED.extra,updated_at=now()
+        """
+        with self.connect() as conn, conn.cursor() as cur:
+            ids = self._resolve_instrument_ids(cur, rows)
+            cur.executemany(sql, [(
+                ids[(r.exchange,r.symbol)],r.effective_date,r.total_shares,r.float_shares,r.free_float_shares,
+                r.source,raw_artifact_id,json.dumps(r.extra),
+            ) for r in rows])
+        return len(rows)
+
+    def upsert_classifications(self, records: Iterable[ClassificationRecord], raw_artifact_id: int | None = None) -> int:
+        rows = list(records)
+        if not rows:
+            return 0
+        sql = """
+            INSERT INTO instrument_classification(
+                instrument_id,classification_system,level,code,name,valid_from,valid_to,source,raw_artifact_id,extra
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+            ON CONFLICT(instrument_id,classification_system,level,valid_from,source) DO UPDATE SET
+                code=COALESCE(EXCLUDED.code,instrument_classification.code),
+                name=EXCLUDED.name,
+                valid_to=COALESCE(EXCLUDED.valid_to,instrument_classification.valid_to),
+                raw_artifact_id=COALESCE(EXCLUDED.raw_artifact_id,instrument_classification.raw_artifact_id),
+                extra=EXCLUDED.extra,updated_at=now()
+        """
+        with self.connect() as conn, conn.cursor() as cur:
+            ids = self._resolve_instrument_ids(cur, rows)
+            cur.executemany(sql, [(
+                ids[(r.exchange,r.symbol)],r.classification_system,r.level,r.code,r.name,r.valid_from,r.valid_to,
+                r.source,raw_artifact_id,json.dumps(r.extra),
+            ) for r in rows])
         return len(rows)
 
     def list_instruments(self, exchange: str = "SZSE") -> list[tuple[int, str, date | None, date | None]]:
