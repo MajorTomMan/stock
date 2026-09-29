@@ -115,6 +115,19 @@ python -m stock_data.cli sync-szse-range \
 
 `--batch-size` 限制的是日期数量，不是股票数量。该命令只适用于 SZSE，因为当前 SSE 官方公开行情是最新市场快照，历史缺口继续由 BaoStock 回填。
 
+## Parquet 冷数据验证
+
+先不要删除 PostgreSQL 中的任何行情。可以把某一年的 canonical 日线导出成 Zstandard 压缩 Parquet，观察真实体积：
+
+```bash
+python -m stock_data.cli export-parquet --exchange SZSE --year 2025
+python -m stock_data.cli export-parquet --exchange SSE --year 2025
+```
+
+默认分别输出到 `data/archive/market_daily/szse/<year>.parquet` 和 `data/archive/market_daily/sse/<year>.parquet`，并打印行数、Parquet 大小、未压缩 Arrow 大小、压缩倍率和平均每行字节数。导出使用服务端游标分批读取，不会一次把整年数据加载进内存。
+
+当前只导出 canonical `market_daily`，不包含多来源 `market_daily_observation`、PostgreSQL 索引或原始交易所文件。这是冷热分层的可行性验证，不会修改数据库，也不会自动上传 R2。
+
 ## 只读 API
 
 ```bash

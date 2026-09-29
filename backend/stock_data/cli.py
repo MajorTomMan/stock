@@ -2,7 +2,9 @@ import argparse
 import json
 import re
 from datetime import date
+from pathlib import Path
 
+from .archive import export_market_daily_year
 from .config import Settings
 from .database import Database
 from .ingestion import IngestionService
@@ -25,6 +27,12 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("migrate")
+
+    archive = sub.add_parser("export-parquet", help="Export one year of canonical daily bars to Parquet")
+    archive.add_argument("--year", required=True, type=int)
+    archive.add_argument("--exchange", choices=["SZSE", "SSE"], default="SZSE")
+    archive.add_argument("--output", default="./data/archive", type=Path)
+    archive.add_argument("--batch-rows", type=int, default=50000)
     sub.add_parser("sync-szse-master")
     sub.add_parser("sync-sse-master")
     sub.add_parser("sync-sse-daily", help="Import the latest SSE official market snapshot")
@@ -62,6 +70,17 @@ def main() -> None:
 
     if args.command == "migrate":
         print("database migrations applied")
+        return
+
+    if args.command == "export-parquet":
+        result = export_market_daily_year(
+            db,
+            args.year,
+            args.output,
+            exchange=args.exchange,
+            batch_rows=args.batch_rows,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
     service = IngestionService(
