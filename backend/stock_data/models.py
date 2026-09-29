@@ -35,6 +35,32 @@ class NameChangeRecord:
 
 
 @dataclass
+class ShareCapitalRecord:
+    exchange: str
+    symbol: str
+    effective_date: date
+    source: str
+    total_shares: int | None = None
+    float_shares: int | None = None
+    free_float_shares: int | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ClassificationRecord:
+    exchange: str
+    symbol: str
+    classification_system: str
+    level: str
+    name: str
+    valid_from: date
+    source: str
+    code: str | None = None
+    valid_to: date | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class DailyBar:
     exchange: str
     symbol: str
