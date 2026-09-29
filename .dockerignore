@@ -1,0 +1,12 @@
+.git
+.github
+frontend
+node_modules
+**/__pycache__
+**/*.pyc
+backend/data
+data
+storage
+*.log
+.env
+.env.*
