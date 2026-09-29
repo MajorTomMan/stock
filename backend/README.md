@@ -16,6 +16,15 @@
 
 `market_daily_observation` 保存各来源原始规范化事实；`market_daily` 选择对外使用的日线。SZSE/SSE 官方来源优先级均为 10，BaoStock 为 50，同一天的 BaoStock 记录不会覆盖已选中的交易所官方记录。价格保留未复权形式；成交量为**股**，成交额为**元**；停牌记录中的 NULL 与 0 保持区别。
 
+
+股票基本资料采用历史化扩展表，不继续膨胀 `instrument`：
+
+- `share_capital_history`：按生效日期保存总股本、流通股本、自由流通股本，可用于后续市值与换手率计算。
+- `instrument_classification`：按分类体系、层级与有效期保存行业/分类历史，可同时容纳交易所、证监会、申万等不同体系。
+- 两张表都保留 `source`、可选 `raw_artifact_id` 与 `extra JSONB`，便于追踪来源和容纳源特有字段。
+- 当前 `instrument.industry` 继续作为轻量当前展示字段；历史与多体系分类以 `instrument_classification` 为准。
+- v2 migration 只新增表，不修改现有 `instrument`、日线、采集记录或已入库数据。当前仅建立结构和数据库写入接口，具体股本/分类数据源将在后续接入。
+
 ## 启动（已有数据库无需删除或重新初始化）
 
 在 `backend/` 目录运行：
