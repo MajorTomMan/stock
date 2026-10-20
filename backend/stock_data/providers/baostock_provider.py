@@ -23,6 +23,12 @@ class BaoStockProvider(DailyMarketProvider):
 
     LOGIN_ATTEMPTS = 4
 
+    def __init__(self, exchange: str = "SZSE"):
+        exchange = exchange.upper()
+        if exchange not in {"SZSE", "SSE"}:
+            raise ValueError(f"Unsupported exchange for BaoStock: {exchange}")
+        self.exchange = exchange
+
     def __enter__(self):
         self._login_with_retry("login")
         return self
@@ -74,9 +80,9 @@ class BaoStockProvider(DailyMarketProvider):
             pass
         self._login_with_retry("reconnect")
 
-    @staticmethod
-    def _code(symbol: str) -> str:
-        return f"sz.{symbol}"
+    def _code(self, symbol: str) -> str:
+        prefix = "sz" if self.exchange == "SZSE" else "sh"
+        return f"{prefix}.{symbol}"
 
     def fetch_daily(self, symbol: str, start: date, end: date) -> list[DailyBar]:
         fields = "date,code,open,high,low,close,preclose,volume,amount,adjustflag,turn,tradestatus,pctChg,isST"
@@ -96,7 +102,7 @@ class BaoStockProvider(DailyMarketProvider):
             row = dict(zip(result.fields, result.get_row_data()))
             bars.append(
                 DailyBar(
-                    exchange="SZSE",
+                    exchange=self.exchange,
                     symbol=symbol,
                     trade_date=date.fromisoformat(row["date"]),
                     source=self.name,

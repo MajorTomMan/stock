@@ -1,0 +1,48 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "stock-market-jobs",
+  "main": "cloudflare/src/index.ts",
+  "compatibility_date": "2026-09-29",
+  "triggers": {
+    "crons": [
+      "30 9 * * 1-5",
+      "30 11 * * *",
+      "30 13 * * *"
+    ]
+  },
+  "containers": [
+    {
+      "class_name": "StockJobContainer",
+      "image": "./Dockerfile.cloudflare",
+      "max_instances": 3,
+      "instance_type": "basic",
+      "constraints": {
+        "regions": ["APAC"]
+      }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "STOCK_JOB_CONTAINER",
+        "class_name": "StockJobContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["StockJobContainer"]
+    }
+  ],
+  "vars": {
+    "HISTORY_END": "2025-08-31",
+    "HISTORY_BATCH_SIZE": "50",
+    "HISTORY_DELAY_SECONDS": "10",
+    "HISTORY_RETRIES": "1",
+    "HTTP_TIMEOUT_SECONDS": "40"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
