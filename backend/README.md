@@ -1,6 +1,6 @@
-# Backend · 深市日线数据
+# Backend · 沪深 A 股日线数据
 
-当前阶段仅包含：SZSE 证券主数据与官方日快照、BaoStock 未复权历史回填、PostgreSQL 数据存储以及只读行情 API。**不包含**实时行情、交易或回测功能。
+当前阶段包含：SZSE/SSE 证券主数据、交易所官方日行情、BaoStock 未复权历史回填、PostgreSQL 数据存储以及只读行情 API。**不包含**实时行情、交易或回测功能。
 
 ## 项目职责
 
@@ -14,7 +14,16 @@
 | `tests/` | 不依赖数据库或网络的单元测试 |
 | `data/raw/szse/` | 下载的原始 XLSX（本机生成，已被 Git 忽略） |
 
-`market_daily_observation` 保存各来源原始规范化事实；`market_daily` 选择对外使用的日线。SZSE 来源优先级为 10，BaoStock 为 50，同一天的 BaoStock 记录不会覆盖已选中的 SZSE 记录。价格保留未复权形式；成交量为**股**，成交额为**元**；停牌记录中的 NULL 与 0 保持区别。
+`market_daily_observation` 保存各来源原始规范化事实；`market_daily` 选择对外使用的日线。SZSE/SSE 官方来源优先级均为 10，BaoStock 为 50，同一天的 BaoStock 记录不会覆盖已选中的交易所官方记录。价格保留未复权形式；成交量为**股**，成交额为**元**；停牌记录中的 NULL 与 0 保持区别。
+
+
+股票基本资料采用历史化扩展表，不继续膨胀 `instrument`：
+
+- `share_capital_history`：按生效日期保存总股本、流通股本、自由流通股本，可用于后续市值与换手率计算。
+- `instrument_classification`：按分类体系、层级与有效期保存行业/分类历史，可同时容纳交易所、证监会、申万等不同体系。
+- 两张表都保留 `source`、可选 `raw_artifact_id` 与 `extra JSONB`，便于追踪来源和容纳源特有字段。
+- 当前 `instrument.industry` 继续作为轻量当前展示字段；历史与多体系分类以 `instrument_classification` 为准。
+- v2 migration 只新增表，不修改现有 `instrument`、日线、采集记录或已入库数据。当前仅建立结构和数据库写入接口，具体股本/分类数据源将在后续接入。
 
 ## 启动（已有数据库无需删除或重新初始化）
 
@@ -40,6 +49,15 @@ python -m stock_data.cli sync-szse-master
 
 包括当前 A 股列表、退市证券、股票简称变更。启动时自动调用尚未应用的 migration；重复执行主数据同步会 upsert。
 
+同步上交所主板 A 股、科创板以及已退市证券：
+
+```bash
+python -m stock_data.cli sync-sse-master
+```
+
+沪市主数据来自上交所股票列表查询接口，主板与科创板都会写入现有 `instrument` 表，分别标记为 `MAIN` / `STAR`；无需新增数据库表。
+
+
 先选 3 只股票验证历史日线：
 
 ```bash
@@ -48,13 +66,25 @@ python -m stock_data.cli bootstrap-baostock \
   --codes 000001.SZ 000004.SZ 300001.SZ
 ```
 
-全深市按批回填（**保持相同日期范围**，重复执行该命令可跳过已成功的股票）：
+深市按批回填（`--exchange SZSE` 是默认值，**保持相同日期范围**即可断点续跑）：
 
 ```bash
 python -m stock_data.cli bootstrap-baostock \
   --start 1991-01-01 --end 2025-08-31 \
   --batch-size 50 --delay 10 --retries 1
 ```
+
+沪市使用同一个回填命令，只需切换交易所：
+
+```bash
+python -m stock_data.cli bootstrap-baostock \
+  --exchange SSE \
+  --start 1990-12-19 --end 2025-08-31 \
+  --batch-size 50 --delay 10 --retries 1
+```
+
+BaoStock 会按交易所映射为 `sz.<code>` 或 `sh.<code>`。新的断点记录会同时保存 exchange；历史版本已经完成但没有 exchange 字段的断点继续按 SZSE 识别，不会因为本次改造重新跑一遍深市。
+
 
 `--batch-size` 默认 50，控制每次最多处理多少只**待完成**股票；`--delay` 控制股票间的等待秒数；`--retries` 控制单只股票失败后的额外重试次数。上述 10 秒是近期连接异常后的保守排查设置，**不是 BaoStock 官方限流阈值**。
 
@@ -70,6 +100,43 @@ python -m stock_data.cli sync-szse-daily --date 2025-09-01
 
 官方快照接口可能对部分历史日期返回空结果；当天无数据并不等于休市。请核实日期和原始文件，而不是自动将零行标记为历史行情完整。
 
+导入上交所**最新交易时段/交易日**的官方市场快照：
+
+```bash
+python -m stock_data.cli sync-sse-daily
+```
+
+上交所公开行情接口返回的是当前最新市场快照，因此该命令故意不提供 `--date`：它会读取响应中的实际市场日期后入库。历史缺口继续由 BaoStock 回填。重复运行同一交易日会按现有 observation/canonical upsert 逻辑更新，不会制造重复日线。
+
+
+## 深市按日期范围增量补近期行情
+
+已有 `sync-szse-daily` 只抓一天。以下命令会按日期逐天导入深交所官方快照，每次最多处理 30 个**尚未处理的工作日**：
+
+```bash
+python -m stock_data.cli sync-szse-range \
+  --start 2025-09-02 --end 2026-09-23 --batch-size 30 --delay 1
+```
+
+日期仅为示例；`--end` 请填要补到的已经结束的交易日。重复运行完全相同的命令，会依据现有 `ingestion_run` 成功记录跳过已处理日期并继续下一批；周末自动跳过，法定节假日由于尚无可靠交易日历仍会向来源请求。
+
+单日失败会记录在 `failed_dates`，其他日期仍会继续；命令最终以非零退出码结束，但此前成功入库的数据不会回滚。空结果列在 `empty_dates`，只表示该日没有获得可入库记录，**不能据此判定休市或历史覆盖完整**。默认会跳过已经请求过的空日期，避免续跑反复卡住；如需重新检查它们可加 `--retry-empty`，需要重抓整个窗口则加 `--force`。
+
+`--batch-size` 限制的是日期数量，不是股票数量。该命令只适用于 SZSE，因为当前 SSE 官方公开行情是最新市场快照，历史缺口继续由 BaoStock 回填。
+
+## Parquet 冷数据验证
+
+先不要删除 PostgreSQL 中的任何行情。可以把某一年的 canonical 日线导出成 Zstandard 压缩 Parquet，观察真实体积：
+
+```bash
+python -m stock_data.cli export-parquet --exchange SZSE --year 2025
+python -m stock_data.cli export-parquet --exchange SSE --year 2025
+```
+
+默认分别输出到 `data/archive/market_daily/szse/<year>.parquet` 和 `data/archive/market_daily/sse/<year>.parquet`，并打印行数、Parquet 大小、未压缩 Arrow 大小、压缩倍率和平均每行字节数。导出使用服务端游标分批读取，不会一次把整年数据加载进内存。
+
+当前只导出 canonical `market_daily`，不包含多来源 `market_daily_observation`、PostgreSQL 索引或原始交易所文件。这是冷热分层的可行性验证，不会修改数据库，也不会自动上传 R2。
+
 ## 只读 API
 
 ```bash
@@ -82,11 +149,13 @@ python -m uvicorn stock_data.api:app --host 127.0.0.1 --port 8000
 curl 'http://127.0.0.1:8000/health'
 curl 'http://127.0.0.1:8000/api/instruments?q=平安&limit=10'
 curl 'http://127.0.0.1:8000/api/instruments/000001'
+curl 'http://127.0.0.1:8000/api/instruments/600000.SH'
 curl 'http://127.0.0.1:8000/api/instruments/000001/daily?start=2025-08-01&end=2025-09-01&limit=100'
+curl 'http://127.0.0.1:8000/api/instruments/600000.SH/daily?limit=100'
 curl 'http://127.0.0.1:8000/api/market/overview?limit=30'
 ```
 
-日线默认获取查询窗口中最近 250 条、最多 5000 条，返回的 `bars` 按日期升序；`has_more=true` 时可用 `next_end` 查询更早记录。市场概览的 `as_of` 是**数据库已入库的最新日期**，不是实时行情。API 尚无鉴权，仅供本机开发。
+证券接口同时支持沪深 A 股，显式后缀可使用 `.SZ` / `.SH`；不带后缀时按数据库中的证券匹配。日线默认获取查询窗口中最近 250 条、最多 5000 条，返回的 `bars` 按日期升序；`has_more=true` 时可用 `next_end` 查询更早记录。市场概览的 `as_of` 是**数据库已入库的最新日期**，不是实时行情。API 尚无鉴权，仅供本机开发。
 
 ## 测试
 

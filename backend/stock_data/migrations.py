@@ -143,4 +143,49 @@ CREATE TABLE IF NOT EXISTS data_quality_issue (
 CREATE INDEX IF NOT EXISTS idx_dq_issue_open ON data_quality_issue(status, issue_type, detected_at DESC);
 ''',
     ),
+    (
+        2,
+        "instrument_reference_data_v2",
+        r'''
+CREATE TABLE IF NOT EXISTS share_capital_history (
+    id BIGSERIAL PRIMARY KEY,
+    instrument_id BIGINT NOT NULL REFERENCES instrument(id) ON DELETE CASCADE,
+    effective_date DATE NOT NULL,
+    total_shares BIGINT,
+    float_shares BIGINT,
+    free_float_shares BIGINT,
+    source VARCHAR(32) NOT NULL,
+    raw_artifact_id BIGINT REFERENCES raw_artifact(id) ON DELETE SET NULL,
+    extra JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (total_shares IS NULL OR total_shares >= 0),
+    CHECK (float_shares IS NULL OR float_shares >= 0),
+    CHECK (free_float_shares IS NULL OR free_float_shares >= 0),
+    UNIQUE (instrument_id, effective_date, source)
+);
+CREATE INDEX IF NOT EXISTS idx_share_capital_instrument_date
+    ON share_capital_history(instrument_id, effective_date DESC);
+
+CREATE TABLE IF NOT EXISTS instrument_classification (
+    id BIGSERIAL PRIMARY KEY,
+    instrument_id BIGINT NOT NULL REFERENCES instrument(id) ON DELETE CASCADE,
+    classification_system VARCHAR(64) NOT NULL,
+    level VARCHAR(32) NOT NULL,
+    code VARCHAR(64),
+    name VARCHAR(128) NOT NULL,
+    valid_from DATE NOT NULL,
+    valid_to DATE,
+    source VARCHAR(32) NOT NULL,
+    raw_artifact_id BIGINT REFERENCES raw_artifact(id) ON DELETE SET NULL,
+    extra JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (valid_to IS NULL OR valid_to >= valid_from),
+    UNIQUE (instrument_id, classification_system, level, valid_from, source)
+);
+CREATE INDEX IF NOT EXISTS idx_instrument_classification_lookup
+    ON instrument_classification(instrument_id, classification_system, level, valid_from DESC);
+''',
+    ),
 ]
