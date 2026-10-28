@@ -3,7 +3,7 @@ from datetime import date
 
 from psycopg.rows import dict_row
 
-from .database import Database
+from stock_data.database import Database
 
 
 class MarketQueries:

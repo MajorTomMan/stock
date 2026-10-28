@@ -140,7 +140,7 @@ Python 长期保留，不迁移到 Java。
 - 回测。
 - 后续策略运行服务。
 
-当前 FastAPI 继续承担市场数据只读 API，直到确有拆分必要。
+现有 FastAPI 只读 API 已迁移至 `backend/python/`，Python 数据采集与市场数据包位于 `ingestion/`；未来 Java 交易服务单独位于 `backend/java/`。
 
 计划逐步采用：
 
@@ -271,35 +271,17 @@ archive/
 - 可以进入 observation/canonical 体系。
 - 不能成为唯一数据源。
 
-## 6. 部署原则
+## 6. 代码分层与运行边界
 
-部署供应商不是核心架构的一部分，允许替换。
+当前仓库不维护云部署层，也不提前绑定 Cloudflare、VM 或数据库托管商。仅保留用于本地开发的 PostgreSQL Compose，原数据库及本地原始文件需安全保留。
 
-必须满足：
+代码已按三个功能层整理：
 
-- PostgreSQL 持久化。
-- 采集任务可以无人值守定时运行。
-- 原始文件持久化到对象存储。
-- 数据库不直接暴露不必要的公网访问。
-- 失败任务可追踪、可重跑。
-- 采集逻辑不能依赖某台开发机长期在线。
+- `ingestion/`：Python 采集、清洗、market 数据写入、质量检查、Parquet。
+- `backend/python/`：FastAPI 只读行情查询；`backend/java/`：M2 模拟交易的 Spring Boot 业务边界。
+- `frontend/`：Vue 网站。
 
-当前仓库已经有 Cloudflare Containers 调度方案；如果后续选择长期 VM，也允许改成：
-
-```text
-Linux VM
-├── PostgreSQL
-├── Python ingestion
-├── FastAPI
-└── systemd timer / cron
-
-Cloudflare
-├── Pages
-├── Tunnel
-└── R2
-```
-
-业务代码不应绑定具体调度平台。
+如后续确有上线需求，再按实际运行环境补充部署配置，避免业务代码绑定云厂商。详情见 [分层架构](ARCHITECTURE.md)。
 
 ## 7. 路线图
 
