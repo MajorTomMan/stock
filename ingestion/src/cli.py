@@ -8,7 +8,7 @@ from .archive import export_market_daily_year
 from .config import Settings
 from .database import Database
 from .ingestion import IngestionService
-from .providers import SzseProvider
+from .providers import SseProvider, SzseProvider
 from .quality import DailyQuality
 
 
