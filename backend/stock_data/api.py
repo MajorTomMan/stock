@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException, Query
 from .config import Settings
 from .database import Database
 from .queries import MarketQueries
+from .quality import DailyQuality
 
 
 app = FastAPI(title="Stock Market Data", version="0.3.0")
@@ -93,3 +94,9 @@ def instrument_daily(symbol: str,
 def market_overview(limit: int = Query(default=30, ge=1, le=100)):
     """Latest date present in our database; it may not be today's market date."""
     return queries.market_overview(limit)
+
+
+@app.get("/api/quality/daily")
+def quality_daily(date: date):
+    """Inspect an already imported date, without blocking data access."""
+    return DailyQuality(queries.db).inspect(date)
