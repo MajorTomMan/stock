@@ -7,7 +7,7 @@
 ```text
 stock/
 ├── ingestion/               # Python：数据源采集、清洗、市场数据库、归档
-│   ├── stock_data/
+│   ├── src/                  # 源码物理目录；安装后包名仍为 stock_data
 │   ├── tests/
 │   ├── pyproject.toml
 │   └── docker-compose.yml   # 本地开发 PostgreSQL，不是云部署层
@@ -17,6 +17,8 @@ stock/
 ├── frontend/                # Vue 3 + Vite
 └── docs/                    # 架构约定与长期路线
 ```
+
+采集源码物理存放在 `ingestion/src/`；安装后导入包和 CLI 入口仍使用 `stock_data`，例如 `python -m stock_data.cli ...`。
 
 仓库不再包含 Cloudflare Containers/Workers 及部署配置。Java 当前是预留模块，并没有启动服务。
 

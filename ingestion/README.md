@@ -4,12 +4,14 @@
 
 ## 项目职责
 
+源码物理存放在 `src/`；安装后导入包和 CLI 入口仍使用 `stock_data`，例如 `python -m stock_data.cli ...`。
+
 | 路径 | 作用 |
 | --- | --- |
-| `stock_data/providers/` | 对接 BaoStock 与深交所，转换为统一模型 |
-| `stock_data/ingestion.py` | 主数据同步、日快照、按股票分批回填 |
-| `stock_data/database.py` | 数据存取、采集执行记录、数据质量问题 |
-| `stock_data/migrations.py` | 数据表结构版本；由 CLI 自动执行 |
+| `src/providers/` | 对接 BaoStock 与深交所，转换为统一模型 |
+| `src/ingestion.py` | 主数据同步、日快照、按股票分批回填 |
+| `src/database.py` | 数据存取、采集执行记录、数据质量问题 |
+| `src/migrations.py` | 数据表结构版本；由 CLI 自动执行 |
 | `backend/python/market_api/` | 独立的 FastAPI 路由和只读查询（不在本模块） |
 | `tests/` | 不依赖数据库或网络的单元测试 |
 | `data/raw/szse/` | 下载的原始 XLSX（本机生成，已被 Git 忽略） |
@@ -144,7 +146,7 @@ FastAPI 路由与只读 SQL 已迁移至 [backend/python/](../backend/python/)�
 ## 测试
 
 ```bash
-python -m compileall -q stock_data tests
+python -m compileall -q src tests
 python -m unittest discover -s tests -v
 ```
 

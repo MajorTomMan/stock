@@ -5,7 +5,7 @@
 ```text
 stock/
 ├── ingestion/                    # Python · 市场数据采集与存储
-│   ├── stock_data/
+│   ├── src/                      # 源码物理目录；安装后包名为 stock_data
 │   │   ├── providers/            # SSE/SZSE/BaoStock 数据源
 │   │   ├── ingestion.py          # 采集任务及断点
 │   │   ├── database.py           # market 数据库操作
@@ -30,7 +30,7 @@ stock/
 
 ## 边界
 
-- `ingestion/stock_data`：持有市场数据模型、provider、任务、质量、迁移和 market 数据库访问。**不得依赖 FastAPI 或 Java 服务**。
+- `ingestion/src/`（安装后逻辑包为 `stock_data`）：持有市场数据模型、provider、任务、质量、迁移和 market 数据库访问。**不得依赖 FastAPI 或 Java 服务**。
 - `backend/python/market_api`：只读市场 API 与查询 SQL；只依赖 `stock_data` 包，不执行采集任务。
 - `backend/java`：M2 再增加 Spring Boot；负责模拟账户、资金、订单、成交和持仓的一致性，不维护 Python 的行情采集代码。
 - `frontend`：通过 HTTP 消费 API，不连接 PostgreSQL、不请求采集来源。

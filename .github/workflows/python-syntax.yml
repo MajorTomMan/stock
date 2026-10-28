@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile Python sources
-        run: python -m compileall -q ingestion/stock_data ingestion/tests backend/python
+        run: python -m compileall -q ingestion/src ingestion/tests backend/python
       - name: Install Python packages
         run: |
           python -m pip install -e ./ingestion

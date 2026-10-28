@@ -16,5 +16,6 @@ dependencies = [
   "pyarrow>=17,<30",
 ]
 
-[tool.setuptools.packages.find]
-include = ["stock_data*"]
+[tool.setuptools]
+packages = ["stock_data", "stock_data.providers"]
+package-dir = { stock_data = "src" }
