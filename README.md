@@ -45,7 +45,7 @@ npm run dev
 
 网站：http://127.0.0.1:5173（自动代理本机 8000 端口的 `/api` 请求）
 
-前端功能与当前边界详见 [frontend/README.md](frontend/README.md)。
+前端功能与当前边界详见 [frontend/README.md](frontend/README.md)。\n\n项目长期目标、技术边界和 M1-M4 路线图见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 
 已有数据库无需重建：执行 `migrate` 只会应用尚未执行的表结构版本。**不要使用 `docker compose down -v` 或 `git clean -fdx` 清理运行目录**；PostgreSQL volume 和 `backend/data/raw/` 保存实际业务数据。
 
