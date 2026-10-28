@@ -41,6 +41,55 @@ python -m stock_data.cli migrate
 
 **重要：**现有 compose 的宿主机端口映射是 `10007:5432`，可能监听所有网络接口。API 示例默认仅监听本机；如需在不受信任的网络环境使用数据库，应单独限制数据库端口访问。Compose 已通过 `name: backend` 复用原项目名与命名卷；旧原始文件如仍在 `backend/data/`，请按 [架构说明](../docs/ARCHITECTURE.md#本地数据保护) 迁移。不要执行 `docker compose down -v`、`docker volume prune` 或 `git clean -fdx`。
 
+## Prefect 3 工作流（推荐入口）
+
+现在使用 Prefect 3 作为 **采集任务编排层**，不取代现有数据源、PostgreSQL、`ingestion_run` 或逐股 checkpoint。上述传统 `stock_data.cli` 命令仍可使用。
+
+首次安装/更新（在 `ingestion/` 目录）：
+
+```bash
+python -m pip install -e .
+```
+
+执行 Flow：
+
+```bash
+# 同步两市证券主数据
+python -m stock_data.workflow_cli master
+
+# 同步指定 SZSE 日期 + SSE 最新市场快照，先同步主数据
+python -m stock_data.workflow_cli daily --date 2026-10-27
+
+# 已有主数据时可跳过 master 步骤
+python -m stock_data.workflow_cli daily --date 2026-10-27 --skip-master
+
+# 历史回填：每次最多 50 只股票，已有成功 checkpoint 会跳过
+python -m stock_data.workflow_cli history --exchange SSE \
+  --start 1990-12-19 --end 2025-08-31 --batch-size 50 --delay 10 --retries 1
+
+# 深市日期范围：每次最多 30 个尚未处理的工作日
+python -m stock_data.workflow_cli szse-range \
+  --start 2026-10-01 --end 2026-10-27 --batch-size 30
+```
+
+`master` / `daily` 的各交易所步骤是独立 Prefect Task，任务暂时串行执行；一个市场失败仍继续尝试另一个，最终 Flow 以失败结束。网络型 master/daily Task 最多额外重试一次，且写入采用现有 upsert 语义。BaoStock 自带的逐股票重试机制保持不变，**不自动重试整批**；出现部分失败时 Prefect Task 会失败，但已成功股票的数据库 checkpoint 保留。SZSE 日期范围部分失败同理。请求到 0 行不代表已证实休市。
+
+这只是本地 Flow 集成，**不是已经启用的定时任务**。直接运行即可看到终端状态日志；若需要持久化查看运行历史和使用 Web UI，可在另一个终端启动本地服务：
+
+```bash
+prefect server start
+```
+
+然后在运行 Flow 的终端设置：
+
+```bash
+export PREFECT_API_URL=http://127.0.0.1:4200/api
+```
+
+打开 http://127.0.0.1:4200 。不需要 Cloudflare、不需要 Prefect Cloud 账号，也不会自动启动额外常驻服务。将来明确部署平台后再设置 Prefect Deployment / Worker / 计划调度。
+
+> Prefect 的 Task 状态是编排层观测；历史是否回填完成仍以 PostgreSQL `ingestion_run` + 实际行情数据为准。并发运行同一个日期窗口或 BaoStock 账号目前未做分布式互斥，**不要同时执行相同的回填 Flow**。
+
 ## 采集命令
 
 首次使用时同步深交所主数据：
