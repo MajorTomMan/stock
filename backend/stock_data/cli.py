@@ -8,7 +8,8 @@ from .archive import export_market_daily_year
 from .config import Settings
 from .database import Database
 from .ingestion import IngestionService
-from .providers import SseProvider, SzseProvider
+from .providers import SzseProvider
+from .quality import DailyQuality
 
 
 def _parse_date(value: str) -> date:
@@ -36,6 +37,9 @@ def main() -> None:
     sub.add_parser("sync-szse-master")
     sub.add_parser("sync-sse-master")
     sub.add_parser("sync-sse-daily", help="Import the latest SSE official market snapshot")
+
+    audit = sub.add_parser("audit-daily", help="Read-only checks for one imported day")
+    audit.add_argument("--date", required=True, type=_parse_date)
 
     daily = sub.add_parser("sync-szse-daily")
     daily.add_argument("--date", required=True, type=_parse_date)
@@ -67,6 +71,10 @@ def main() -> None:
     settings = Settings.from_env()
     db = Database(settings.database_url)
     db.migrate()
+
+    if args.command == "audit-daily":
+        print(json.dumps(DailyQuality(db).inspect(args.date), ensure_ascii=False, indent=2))
+        return
 
     if args.command == "migrate":
         print("database migrations applied")
