@@ -4,11 +4,10 @@
 
 ## 启动
 
-第一个终端（仓库根目录）：
+第一个终端（仓库根目录；先按 [根 README](../README.md) 安装采集包并启动 PostgreSQL）：
 
 ```bash
-cd backend
-python -m uvicorn stock_data.api:app --host 127.0.0.1 --port 8000
+python -m uvicorn market_api.app:app --app-dir backend/python --host 127.0.0.1 --port 8000
 ```
 
 第二个终端：

@@ -1,16 +1,16 @@
 """Read-only HTTP API for canonical Shenzhen and Shanghai A-share market data.
 
-Run from backend/: python -m uvicorn stock_data.api:app --host 127.0.0.1 --port 8000
+Run from repository root: python -m uvicorn market_api.app:app --app-dir backend/python --host 127.0.0.1 --port 8000
 """
 from datetime import date, timedelta
 import re
 
 from fastapi import FastAPI, HTTPException, Query
 
-from .config import Settings
-from .database import Database
+from stock_data.config import Settings
+from stock_data.database import Database
 from .queries import MarketQueries
-from .quality import DailyQuality
+from stock_data.quality import DailyQuality
 
 
 app = FastAPI(title="Stock Market Data", version="0.3.0")

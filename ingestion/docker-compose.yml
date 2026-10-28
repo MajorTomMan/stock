@@ -1,3 +1,4 @@
+name: backend  # Preserve the original Compose project/volume after moving directories.
 services:
   postgres:
     image: postgres:18
