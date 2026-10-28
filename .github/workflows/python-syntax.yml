@@ -7,9 +7,8 @@ on:
       - feature/data-quality-publication
   pull_request:
     paths:
-      - "backend/stock_data/**"
-      - "backend/tests/**"
-      - "backend/requirements.txt"
+      - "ingestion/**"
+      - "backend/python/**"
       - ".github/workflows/python-syntax.yml"
 
 jobs:
@@ -20,10 +19,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Compile sources and tests
-        run: python -m compileall -q backend/stock_data backend/tests
-      - name: Install dependencies
-        run: python -m pip install -r backend/requirements.txt
+      - name: Compile Python sources
+        run: python -m compileall -q ingestion/stock_data ingestion/tests backend/python
+      - name: Install Python packages
+        run: |
+          python -m pip install -e ./ingestion
+          python -m pip install -r backend/python/requirements.txt
       - name: Run offline unit tests
-        working-directory: backend
+        working-directory: ingestion
         run: python -m unittest discover -s tests -v
+      - name: Verify market API imports and routes
+        env:
+          PYTHONPATH: backend/python
+        run: |
+          python - <<'PY'
+          from market_api.app import app
+          paths = {route.path for route in app.routes}
+          assert {"/health", "/api/instruments", "/api/instruments/{symbol}/daily", "/api/market/overview"} <= paths
+          PY
