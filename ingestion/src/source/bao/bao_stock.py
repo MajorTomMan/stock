@@ -64,8 +64,8 @@ class BaoStock:
             adjust_flag = _integer(row.get("adjustflag"))
             raw_st = str(row.get("isST", "")).strip()
             bar = BaoDailyBar(
-                date=pd.to_datetime(row["date"]).date(),
-                code=row["code"],
+                trade_date=pd.to_datetime(row["date"]).date(),
+                symbol=row["code"],
                 open=_decimal(row["open"]),
                 high=_decimal(row["high"]),
                 low=_decimal(row["low"]),
@@ -73,8 +73,8 @@ class BaoStock:
                 pre_close=_decimal(row.get("preclose")),
                 volume=_integer(row.get("volume")),
                 amount=_decimal(row.get("amount")),
-                turnover_rate=_decimal(row.get("turn")),
                 pct_change=_decimal(row.get("pctChg")),
+                turnover_rate=_decimal(row.get("turn")),
                 adjust_flag=3 if adjust_flag is None else adjust_flag,
                 trade_status=_integer(row.get("tradestatus")),
                 is_st=raw_st == "1" if raw_st in {"0", "1"} else None,
