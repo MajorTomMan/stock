@@ -1,38 +1,37 @@
-
 from prefect import flow, task
 
 
-@task
-def fetch(symbol: str):
-    print(f"正在抓取股票 {symbol}")
-    return {
-        "symbol": symbol,
-        "close": "12.50",
-        "volume": "1000"
+@task(retries=2, retry_delay_seconds=5)
+def fetch(exchange: str):
+    raise RuntimeError("深交所接口异常")
+    return f"{exchange} 采集成功"
+
+
+@flow
+def stock_flow():
+    futures = {
+        "SSE": fetch.submit("SSE"),
+        "SZSE": fetch.submit("SZSE"),
     }
 
+    # 等两条分支分别结束，不因其中一条失败而提前抛异常
+    for future in futures.values():
+        future.wait()
 
-@task
-def normalize(data: dict):
+    failed = [
+        name
+        for name, future in futures.items()
+        if not future.state.is_completed()
+    ]
+
+    if failed:
+        raise RuntimeError(f"采集失败的数据源: {failed}")
+
     return {
-        "symbol": data["symbol"],
-        "close": float(data["close"]),
-        "volume_shares": int(data["volume"]) * 100
+        name: future.result()
+        for name, future in futures.items()
     }
-
-
-@task
-def save(data: dict):
-    print(f"准备保存: {data}")
-    return len(data)
-
-
-@flow(name="stock-daily")
-def stock_flow(symbol: str):
-    raw = fetch(symbol)
-    normalized = normalize(raw)
-    return save(normalized)
 
 
 if __name__ == "__main__":
-    stock_flow("000001")
+    stock_flow()
