@@ -14,7 +14,13 @@ def fetch_daily(code: str, start: str, end: str):
 
 @task
 def preview_daily(bars):
-     print(bars)
+     if not bars:
+        print("No data fetched.")
+        return
+     else:
+        print(f"Fetched {len(bars)} daily bars.")
+        for bar in bars[:5]:  # Preview first 5 bars
+            print(bar)
 
 
 @flow(name="bao-stock-daily")
