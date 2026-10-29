@@ -1,55 +1,43 @@
-from dataclasses import dataclass
-from datetime import date
+"""BaoStock-specific daily fields and request-field names."""
+
+from dataclasses import dataclass, fields as dataclass_fields
 from decimal import Decimal
-from dataclasses import fields as dataclass_fields
+from typing import ClassVar
+
+from ingestion.src.model.daily_bar import DailyBar
 
 
 @dataclass(slots=True)
-class BaoDailyBar:
-    # 基础信息
-    date: date
-    code: str
-
-    # OHLC
-    open: Decimal | None = None
-    high: Decimal | None = None
-    low: Decimal | None = None
-    close: Decimal | None = None
-    pre_close: Decimal | None = None
-
-    # 成交信息
-    volume: int | None = None
-    amount: Decimal | None = None
+class BaoDailyBar(DailyBar):
     turnover_rate: Decimal | None = None
-    pct_change: Decimal | None = None
-
-    # 交易状态
     adjust_flag: int = 3
     trade_status: int | None = None
     is_st: bool | None = None
 
-    # 估值指标
     pe_ttm: Decimal | None = None
     pb_mrq: Decimal | None = None
     ps_ttm: Decimal | None = None
     pcf_ncf_ttm: Decimal | None = None
 
-    fields = {
-    "pre_close": "preclose",
-    "turnover_rate": "turn",
-    "pct_change": "pctChg",
-    "adjust_flag": "adjustflag",
-    "trade_status": "tradestatus",
-    "is_st": "isST",
-    "pe_ttm": "peTTM",
-    "pb_mrq": "pbMRQ",
-    "ps_ttm": "psTTM",
-    "pcf_ncf_ttm": "pcfNcfTTM",
+    # Keep source API names here, not in the provider-independent model.
+    source_fields: ClassVar[dict[str, str]] = {
+        "trade_date": "date",
+        "symbol": "code",
+        "pre_close": "preclose",
+        "pct_change": "pctChg",
+        "turnover_rate": "turn",
+        "adjust_flag": "adjustflag",
+        "trade_status": "tradestatus",
+        "is_st": "isST",
+        "pe_ttm": "peTTM",
+        "pb_mrq": "pbMRQ",
+        "ps_ttm": "psTTM",
+        "pcf_ncf_ttm": "pcfNcfTTM",
     }
 
     @classmethod
     def to_fields(cls) -> str:
         return ",".join(
-            cls.fields.get(f.name, f.name)
-            for f in dataclass_fields(cls)
+            cls.source_fields.get(field.name, field.name)
+            for field in dataclass_fields(cls)
         )
