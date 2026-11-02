@@ -1,0 +1,4 @@
+baostock==0.9.3
+pandas==2.2.2
+prefect==3.9.0
+redis
