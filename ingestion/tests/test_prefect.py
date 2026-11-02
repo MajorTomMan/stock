@@ -6,7 +6,7 @@ from decimal import Decimal
 from prefect import flow, task
 
 from ingestion.src.source.bao.bao_stock import BaoStock
-from ingestion.src.source.bao.handler import BaoDeduplicateHandler
+from ingestion.src.source.bao.handler.deduplicate_handler import BaoDeduplicateHandler
 from ingestion.src.source.bao.model.daily_bar import BaoDailyBar
 
 
@@ -84,7 +84,7 @@ def fetch_daily(code: str, start: str, end: str):
 
 @task
 def deduplicate_daily(bars):    
-    handler = BaoDeduplicateHandler(config={})
+    handler = deduplicate_handler(config={})
 
     result = handler.deduplicate(test_bars)
 
