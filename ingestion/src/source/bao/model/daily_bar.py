@@ -1,43 +1,35 @@
-"""BaoStock-specific daily fields and request-field names."""
-
-from dataclasses import dataclass, fields as dataclass_fields
+from dataclasses import dataclass, field, fields
 from decimal import Decimal
-from typing import ClassVar
 
+from ingestion.src.constant.dict import STOCK_FIELDS
 from ingestion.src.model.daily_bar import DailyBar
 
 
 @dataclass(slots=True)
 class BaoDailyBar(DailyBar):
-    turnover_rate: Decimal | None = None
-    adjust_flag: int = 3
-    trade_status: int | None = None
-    is_st: bool | None = None
+    """BaoStock 日线行情数据模型"""
+    source: str = field(default="bao", init=False)
+    # ===== 交易指标 =====
+    turnover_rate: Decimal | None = None  # 换手率，单位：%
+    adjust_flag: int = 3                  # 复权类型：1 后复权、2 前复权、3 不复权
 
-    pe_ttm: Decimal | None = None
-    pb_mrq: Decimal | None = None
-    ps_ttm: Decimal | None = None
-    pcf_ncf_ttm: Decimal | None = None
+    # ===== 交易状态 =====
+    trade_status: int | None = None       # 交易状态：1 正常交易、0 停牌
+    is_st: bool | None = None             # 是否为 ST 股票
 
-    # Keep source API names here, not in the provider-independent model.
-    source_fields: ClassVar[dict[str, str]] = {
-        "trade_date": "date",
-        "symbol": "code",
-        "pre_close": "preclose",
-        "pct_change": "pctChg",
-        "turnover_rate": "turn",
-        "adjust_flag": "adjustflag",
-        "trade_status": "tradestatus",
-        "is_st": "isST",
-        "pe_ttm": "peTTM",
-        "pb_mrq": "pbMRQ",
-        "ps_ttm": "psTTM",
-        "pcf_ncf_ttm": "pcfNcfTTM",
-    }
+    # ===== 估值指标 =====
+    pe_ttm: Decimal | None = None         # 市盈率 TTM，最近12个月滚动市盈率
+    pb_mrq: Decimal | None = None         # 市净率 MRQ，基于最近报告期净资产
+    ps_ttm: Decimal | None = None         # 市销率 TTM，基于最近12个月营业收入
+    pcf_ncf_ttm: Decimal | None = None    # 市现率 TTM，基于最近12个月净现金流
 
     @classmethod
     def to_fields(cls) -> str:
+        mapping = STOCK_FIELDS["bao"]
+        basic = STOCK_FIELDS["basic"]
+
         return ",".join(
-            cls.source_fields.get(field.name, field.name)
-            for field in dataclass_fields(cls)
+            mapping.get(f.name, basic.get(f.name, f.name))
+            for f in fields(cls)
+            if f.name != "source"
         )
