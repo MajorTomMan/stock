@@ -4,7 +4,7 @@ from ingestion.src.source.bao.model.daily_bar import BaoDailyBar
 
 
 
-class BaoValicateHandler(ValidateHandler):
+class BaoValidateHandler(ValidateHandler):
     def __init__(self, config):
         self.config = config
 
@@ -16,11 +16,12 @@ class BaoValicateHandler(ValidateHandler):
     #成交金额	不允许负数
     @staticmethod
     def validate(bar:BaoDailyBar):
+
         if bar.symbol is None or bar.trade_date is None:
                 raise ValueError(f"股票代码或交易日期不能为空: {bar}")
-        if bar.open_price < 0 or bar.high_price < 0 or bar.low_price < 0 or bar.close_price < 0:
+        if bar.open < 0 or bar.high < 0 or bar.low < 0 or bar.close < 0:
                 raise ValueError(f"OHLC价格不允许负值: {bar}")
-        if bar.high_price < bar.low_price:
+        if bar.high < bar.low:
                 raise ValueError(f"最高价必须大于等于最低价: {bar}")
         if bar.volume < 0:
                 raise ValueError(f"成交量不允许负数: {bar}")

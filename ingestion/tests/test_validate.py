@@ -7,7 +7,7 @@ from prefect import flow, task
 
 from ingestion.src.source.bao.bao_stock import BaoStock
 from ingestion.src.source.bao.handler.deduplicate_handler import BaoDeduplicateHandler
-from ingestion.src.source.bao.handler.validate_handler import BaoValicateHandler
+from ingestion.src.source.bao.handler.validate_handler import BaoValidateHandler
 from ingestion.src.source.bao.model.daily_bar import BaoDailyBar
 
 
@@ -84,7 +84,7 @@ def fetch_daily(code: str, start: str, end: str):
 
 
 @task
-def deduplicate_daily(bars):    
+def deduplicate_daily(bars:list[BaoDailyBar]):    
     handler = BaoDeduplicateHandler(config={})
 
     result = handler.deduplicate(bars)
@@ -94,18 +94,19 @@ def deduplicate_daily(bars):
     return result
 
 @task
-def validate_daily(bars):    
-    faileds = []
-    handler = BaoValicateHandler(config={})
-    for index,bar in enumerate(bars):
+def validate_daily(bars):
+    valid_bars = []
+    handler = BaoValidateHandler(config={})
+
+    for bar in bars:
         try:
             handler.validate(bar)
-        except:
-            print("校验失败:"+bar)
-            faileds.append(index)
-    if faileds:
-        bars.remove(index)
-    return bars
+            valid_bars.append(bar)
+        except ValueError as e:
+            print(f"校验失败: {e}")
+    print("校验前:", len(bars))
+    print("校验后:", len(valid_bars))
+    return valid_bars
 
 @task
 def preview_daily(bars):
@@ -118,7 +119,8 @@ def preview_daily(bars):
 def stock_daily_flow():
     data = fetch_daily.submit("sh.600000", "2023-01-01", "2023-12-31")
     deduplicate = deduplicate_daily.submit(data)
-    preview_daily.submit(deduplicate).result()
+    validate = validate_daily.submit(deduplicate)
+    preview_daily.submit(validate).result()
     print("Flow completed.")
 
 if __name__ == "__main__":
