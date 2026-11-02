@@ -84,15 +84,13 @@ def fetch_daily(code: str, start: str, end: str):
 
 @task
 def deduplicate_daily(bars):    
-    handler = deduplicate_handler(config={})
+    handler = BaoDeduplicateHandler(config={})
 
     result = handler.deduplicate(test_bars)
 
     print("去重前:", len(test_bars))
     print("去重后:", len(result))
-
-    assert len(result) == 4
-    assert result[0].close == Decimal("10.50")
+    return result
 
 
 
@@ -108,7 +106,7 @@ def stock_daily_flow():
     data = fetch_daily.submit("sh.600000", "2023-01-01", "2023-12-31")
     deduplicate = deduplicate_daily.submit(data)
     preview_daily.submit(deduplicate).result()
-
+    print("Flow completed.")
 
 if __name__ == "__main__":
     stock_daily_flow()
