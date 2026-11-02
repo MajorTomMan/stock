@@ -86,9 +86,9 @@ def fetch_daily(code: str, start: str, end: str):
 def deduplicate_daily(bars):    
     handler = BaoDeduplicateHandler(config={})
 
-    result = handler.deduplicate(test_bars)
+    result = handler.deduplicate(bars)
 
-    print("去重前:", len(test_bars))
+    print("去重前:", len(bars))
     print("去重后:", len(result))
     return result
 
