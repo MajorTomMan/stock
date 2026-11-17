@@ -8,7 +8,7 @@ from ingestion.src.model.daily_bar import DailyBar
 @dataclass(slots=True)
 class BaoDailyBar(DailyBar):
     """BaoStock 日线行情数据模型"""
-    source: str = field(default="bao", init=False)
+    source: str = field(default="bao", init=True)
     # ===== 交易指标 =====
     turnover_rate: Decimal | None = None  # 换手率，单位：%
     adjust_flag: int = 3                  # 复权类型：1 后复权、2 前复权、3 不复权
