@@ -62,6 +62,7 @@ class RedisUtil:
     async def stream_read(
         self,
         stream: str,
+        stream_id:int,
         count: int = 10,
     ):
         """
@@ -73,7 +74,7 @@ class RedisUtil:
         返回：包含消息 ID 和字段的列表
         """
         return await self.client.xread(
-            streams={stream: "0"},
+            streams={stream: stream_id},
             count=count,
             block=1000,  # 没有消息时最多等待 1 秒
         )
