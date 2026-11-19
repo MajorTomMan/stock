@@ -122,7 +122,7 @@ def preview_daily(bars):
 async def stock_daily_publish(data:DailyBar):
     publisher = RedisStreamPublisher(stream_name="bao_stock_daily")
     for d in data:
-        await publisher.publish(d.to_json())
+        await publisher.publish(DailyBar.to_json(d))
 
 @flow(name="bao-stock-daily")
 def stock_daily_flow():
