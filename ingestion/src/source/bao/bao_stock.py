@@ -5,26 +5,6 @@ import pandas as pd
 
 from ingestion.src.source.bao.model.daily_bar import BaoDailyBar
 
-
-def _decimal(value: object) -> Decimal | None:
-    """Preserve source precision and distinguish missing values from zero."""
-    if value is None or pd.isna(value):
-        return None
-    text = str(value).strip()
-    if text.lower() in {"", "nan", "none", "null"}:
-        return None
-    return Decimal(text)
-
-
-def _integer(value: object) -> int | None:
-    number = _decimal(value)
-    if number is None:
-        return None
-    if number != number.to_integral_value():
-        raise ValueError(f"Expected integer value, got {value!r}")
-    return int(number)
-
-
 class BaoStock:
     def login_with_name(self, username: str, password: str):
         return bs.login(username=username, password=password)
@@ -61,27 +41,46 @@ class BaoStock:
     def parse_daily_bars(self, df: pd.DataFrame) -> list[BaoDailyBar]:
         bars = []
         for _, row in df.iterrows():
-            adjust_flag = _integer(row.get("adjustflag"))
+            adjust_flag = self._integer(row.get("adjustflag"))
             raw_st = str(row.get("isST", "")).strip()
             bar = BaoDailyBar(
                 trade_date=pd.to_datetime(row["date"]).date(),
                 symbol=row["code"],
-                open=_decimal(row["open"]),
-                high=_decimal(row["high"]),
-                low=_decimal(row["low"]),
-                close=_decimal(row["close"]),
-                pre_close=_decimal(row.get("preclose")),
-                volume=_integer(row.get("volume")),
-                amount=_decimal(row.get("amount")),
-                pct_change=_decimal(row.get("pctChg")),
-                turnover_rate=_decimal(row.get("turn")),
+                open=self._decimal(row["open"]),
+                high=self._decimal(row["high"]),
+                low=self._decimal(row["low"]),
+                close=self._decimal(row["close"]),
+                pre_close=self._decimal(row.get("preclose")),
+                volume=self._integer(row.get("volume")),
+                amount=self._decimal(row.get("amount")),
+                pct_change=self._decimal(row.get("pctChg")),
+                turnover_rate=self._decimal(row.get("turn")),
                 adjust_flag=3 if adjust_flag is None else adjust_flag,
-                trade_status=_integer(row.get("tradestatus")),
+                trade_status=self._integer(row.get("tradestatus")),
                 is_st=raw_st == "1" if raw_st in {"0", "1"} else None,
-                pe_ttm=_decimal(row.get("peTTM")),
-                pb_mrq=_decimal(row.get("pbMRQ")),
-                ps_ttm=_decimal(row.get("psTTM")),
-                pcf_ncf_ttm=_decimal(row.get("pcfNcfTTM")),
+                pe_ttm=self._decimal(row.get("peTTM")),
+                pb_mrq=self._decimal(row.get("pbMRQ")),
+                ps_ttm=self._decimal(row.get("psTTM")),
+                pcf_ncf_ttm=self._decimal(row.get("pcfNcfTTM")),
             )
             bars.append(bar)
         return bars
+
+
+    def _decimal(self,value: object) -> Decimal | None:
+        """Preserve source precision and distinguish missing values from zero."""
+        if value is None or pd.isna(value):
+            return None
+        text = str(value).strip()
+        if text.lower() in {"", "nan", "none", "null"}:
+            return None
+        return Decimal(text)
+
+
+    def _integer(self,value: object) -> int | None:
+        number = self._decimal(value)
+        if number is None:
+            return None
+        if number != number.to_integral_value():
+            raise ValueError(f"Expected integer value, got {value!r}")
+        return int(number)
