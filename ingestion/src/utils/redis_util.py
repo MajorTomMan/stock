@@ -62,7 +62,7 @@ class RedisUtil:
     async def stream_read(
         self,
         stream: str,
-        stream_id:int,
+        stream_id:str,
         count: int = 10,
     ):
         """
