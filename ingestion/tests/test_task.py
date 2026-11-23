@@ -39,7 +39,7 @@ StockTask(
 
 
 
-@task
+@task(retries=3, retry_delay_seconds=[30, 60, 120])
 def fetch_daily(task:StockTask):
     bao = BaoStock()
     params = task.params
@@ -100,9 +100,13 @@ async def stock_daily_publish(data:list):
     return await publisher.publish(temp)
 
 @flow(name="bao-stock-daily")
-def stock_daily_flow():
+def stock_daily_flow(tasks: list[StockTask]):
     for task in tasks:
-        data = fetch_daily.submit(task=task)
+        try:
+            data = fetch_daily.submit(task=task)
+        except:
+            print(f"拉取异常:{task}")
+            continue
         deduplicate = deduplicate_daily.submit(data)
         validate = validate_daily.submit(deduplicate)
         preview = preview_daily.submit(validate)
