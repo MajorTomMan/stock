@@ -16,9 +16,8 @@ from ingestion.src.source.bao.model.daily_bar import BaoDailyBar
 from ingestion.src.constant.redis import RedisStream
 from ingestion.src.task.stock_task import StockTask
 
-
-
-task1 = StockTask(
+tasks = [
+StockTask(
     task_id="bao-daily-001",
     source="bao",
     dataset="daily",
@@ -26,10 +25,8 @@ task1 = StockTask(
         "symbol": "sh.600000",
         "start_date": "2023-01-01",
         "end_date": "2023-12-31",
-    },
-)
-
-task2 = StockTask(
+    }),
+    StockTask(
     task_id="bao-daily-002",
     source="bao",
     dataset="daily",
@@ -37,8 +34,9 @@ task2 = StockTask(
         "symbol": "sz.000001",
         "start_date": "2023-01-01",
         "end_date": "2023-12-31",
-    },
-)
+    })
+]
+
 
 
 @task
@@ -103,13 +101,14 @@ async def stock_daily_publish(data:list):
 
 @flow(name="bao-stock-daily")
 def stock_daily_flow():
-    data = fetch_daily.submit(task=task1)
-    deduplicate = deduplicate_daily.submit(data)
-    validate = validate_daily.submit(deduplicate)
-    preview = preview_daily.submit(validate)
-    ids = stock_daily_publish.submit(validate).result()
-    for msg_id in ids:
-        print(msg_id)
+    for task in tasks:
+        data = fetch_daily.submit(task=task)
+        deduplicate = deduplicate_daily.submit(data)
+        validate = validate_daily.submit(deduplicate)
+        preview = preview_daily.submit(validate)
+        ids = stock_daily_publish.submit(validate).result()
+        for msg_id in ids:
+            print(msg_id)
     print("Flow completed.")
 
 if __name__ == "__main__":
