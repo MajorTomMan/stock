@@ -27,6 +27,10 @@ class BaoValidateHandler(ValidateHandler):
                raise ValueError(f"最低价不能为空: {bar}")
         if bar.close is None:
                raise ValueError(f"收盘价不能为空: {bar}")
+        if bar.volume is None:
+                raise ValueError(f"成交量不能为空: {bar}")
+        if bar.amount is None:
+                raise ValueError(f"成交金额不能为空: {bar}")
         if bar.open < 0:
                raise ValueError(f"开盘价不允许负数: {bar}")
         if bar.high < 0:

@@ -27,7 +27,7 @@ async def test_publish():
 
 
 async def test_consume():
-    data = await redis_util.stream_read(stream="stock:daily", count=10)
+    data = await redis_util.stream_read(stream="stock:daily",stream_id="test-0", count=10)
     print("消费数据:", data)
 
 
