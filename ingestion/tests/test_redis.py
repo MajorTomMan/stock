@@ -26,8 +26,8 @@ async def test_publish():
         return message_id
 
 
-async def test_consume():
-    data = await redis_util.stream_read(stream="stock:daily",stream_id="test-0", count=10)
+async def test_consume(msg_id):
+    data = await redis_util.stream_read(stream="stock:daily",stream_id=msg_id, count=10)
     print("消费数据:", data)
 
 
@@ -48,7 +48,7 @@ async def test_delete(id):
 async def test_main():
     await test_redis_util()
     message_id = await test_publish()
-    await test_consume()
+    await test_consume(message_id)
     await test_ack(message_id)
     await test_delete(message_id)
     await test_close()

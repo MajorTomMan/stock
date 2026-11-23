@@ -13,6 +13,7 @@ from ingestion.src.source.bao.handler.validate_handler import BaoValidateHandler
 from ingestion.src.source.bao.model.daily_bar import BaoDailyBar
 
 
+from ingestion.src.constant.redis import RedisStream
 
 test_bars = [
     # A：正常记录
@@ -119,10 +120,14 @@ def preview_daily(bars):
 
 
 @task
-async def stock_daily_publish(data:DailyBar):
-    publisher = RedisStreamPublisher(stream_name="bao_stock_daily")
+async def stock_daily_publish(data:list):
+    if not isinstance(data,list):
+        raise TypeError("只接受List格式")
+    publisher = RedisStreamPublisher(stream_name=RedisStream.Name)
+    temp = []
     for d in data:
-        await publisher.publish(DailyBar.to_json(d))
+        temp.append(DailyBar.to_dict(d))
+    return await publisher.publish(temp)
 
 @flow(name="bao-stock-daily")
 def stock_daily_flow():
@@ -130,7 +135,9 @@ def stock_daily_flow():
     deduplicate = deduplicate_daily.submit(data)
     validate = validate_daily.submit(deduplicate)
     preview = preview_daily.submit(validate)
-    stock_daily_publish.submit(validate).result()
+    ids = stock_daily_publish.submit(validate).result()
+    for msg_id in ids:
+        print(msg_id)
     print("Flow completed.")
 
 if __name__ == "__main__":

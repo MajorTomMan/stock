@@ -1,4 +1,6 @@
 
+import json
+
 import redis.asyncio as redis
 from redis.exceptions import ResponseError
 
@@ -53,9 +55,10 @@ class RedisUtil:
 
         返回：Redis 生成的消息 ID，例如 1690000000000-0
         """
+        temp = {"data":json.dumps(fields,default=str)}
         return await self.client.xadd(
             name=stream,
-            fields=fields,
+            fields=temp,
         )
 
     
