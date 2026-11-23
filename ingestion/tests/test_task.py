@@ -5,9 +5,7 @@ from prefect import flow, task
 
 from ingestion.src.model.daily_bar import DailyBar
 from ingestion.src.pulisher.impl.redis_stream_publisher import RedisStreamPublisher
-from ingestion.src.source.bao.bao_stock import BaoStock
-from ingestion.src.source.bao.handler.deduplicate_handler import BaoDeduplicateHandler
-from ingestion.src.source.bao.handler.validate_handler import BaoValidateHandler
+from ingestion.src.handler.handler_factory import HandlerFactory
 from ingestion.src.source.bao.model.daily_bar import BaoDailyBar
 from ingestion.src.source.stock_source_factory import StockSourceFactory
 
@@ -51,10 +49,8 @@ def fetch_daily(task:StockTask):
         return results
 @task
 def deduplicate_daily(bars:list[BaoDailyBar]):    
-    handler = BaoDeduplicateHandler(config={})
-
+    handler = HandlerFactory.get("bao","deduplicate")
     result = handler.deduplicate(bars)
-
     print("去重前:", len(bars))
     print("去重后:", len(result))
     return result
@@ -62,7 +58,7 @@ def deduplicate_daily(bars:list[BaoDailyBar]):
 @task
 def validate_daily(bars):
     valid_bars = []
-    handler = BaoValidateHandler(config={})
+    handler = HandlerFactory.get("bao","validate")
 
     for bar in bars:
         try:
