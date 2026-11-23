@@ -4,8 +4,20 @@ import baostock as bs
 import pandas as pd
 
 from ingestion.src.source.bao.model.daily_bar import BaoDailyBar
+from ingestion.src.source.stock_source import StockSource
 
-class BaoStock:
+class BaoStock(StockSource):
+
+
+    def fetch_daily(self, symbol, start_date, end_date):
+        self.login()
+        try:
+            result = self.query_daily_k_data(code=symbol, start_date=start_date, end_date=end_date)
+            return self.parse_daily_bars(self.format_data(result))
+        finally:
+            self.logout()
+
+
     def login_with_name(self, username: str, password: str):
         return bs.login(username=username, password=password)
 
