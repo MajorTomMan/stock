@@ -41,7 +41,6 @@ StockTask(
 
 @task(retries=3, retry_delay_seconds=[30, 60, 120])
 def fetch_daily(task:StockTask):
-    bao = BaoStock()
     params = task.params
     if params:
         source = task.source
@@ -49,12 +48,7 @@ def fetch_daily(task:StockTask):
         start_date = params.get("start_date")
         end_date = params.get("end_date")
         if source == "bao":
-            bao.login()
-            results = bao.query_daily_k_data(code= symbol,start_date=start_date,end_date=end_date)
-            if results:
-                results = bao.parse_daily_bars(bao.format_data(results))
-                print(results)
-                return results
+            return BaoStock().fetch_daily(symbol,start_date,end_date)
         return []
 @task
 def deduplicate_daily(bars:list[BaoDailyBar]):    
