@@ -1,7 +1,5 @@
 """Small BaoStock → preview Prefect example (run as a module)."""
 
-from datetime import date
-from decimal import Decimal
 
 from prefect import flow, task
 
@@ -11,7 +9,7 @@ from ingestion.src.source.bao.bao_stock import BaoStock
 from ingestion.src.source.bao.handler.deduplicate_handler import BaoDeduplicateHandler
 from ingestion.src.source.bao.handler.validate_handler import BaoValidateHandler
 from ingestion.src.source.bao.model.daily_bar import BaoDailyBar
-
+from ingestion.src.source.stock_source_factory import StockSourceFactory
 
 from ingestion.src.constant.redis import RedisStream
 from ingestion.src.task.stock_task import StockTask
@@ -41,15 +39,16 @@ StockTask(
 
 @task(retries=3, retry_delay_seconds=[30, 60, 120])
 def fetch_daily(task:StockTask):
+    factory = StockSourceFactory()
     params = task.params
     if params:
         source = task.source
         symbol = params.get("symbol")
         start_date = params.get("start_date")
         end_date = params.get("end_date")
-        if source == "bao":
-            return BaoStock().fetch_daily(symbol,start_date,end_date)
-        return []
+        instance = factory.get(source=source)
+        results = instance.fetch_daily(symbol=symbol,start_date=start_date,end_date=end_date)
+        return results
 @task
 def deduplicate_daily(bars:list[BaoDailyBar]):    
     handler = BaoDeduplicateHandler(config={})
