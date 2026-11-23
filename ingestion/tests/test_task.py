@@ -48,17 +48,17 @@ def fetch_daily(task:StockTask):
         results = instance.fetch_daily(symbol=symbol,start_date=start_date,end_date=end_date)
         return results
 @task
-def deduplicate_daily(bars:list[BaoDailyBar]):    
-    handler = HandlerFactory.get("bao","deduplicate")
+def deduplicate_daily(source:str,bars:list[BaoDailyBar]):    
+    handler = HandlerFactory.get(source=source,handler_type="deduplicate")
     result = handler.deduplicate(bars)
     print("去重前:", len(bars))
     print("去重后:", len(result))
     return result
 
 @task
-def validate_daily(bars):
+def validate_daily(source:str,bars:list[BaoDailyBar]):
     valid_bars = []
-    handler = HandlerFactory.get("bao","validate")
+    handler = HandlerFactory.get(source=source,handler_type="validate")
 
     for bar in bars:
         try:
@@ -90,18 +90,19 @@ async def stock_daily_publish(data:list):
 
 @flow(name="bao-stock-daily")
 def stock_daily_flow(tasks: list[StockTask]):
-    for stock_task in tasks:
+    for task in tasks:
         try:
-            data = fetch_daily.submit(task=stock_task).result()
-            deduplicate = deduplicate_daily.submit(data)
-            validate = validate_daily.submit(deduplicate)
+            source = task.source
+            data = fetch_daily.submit(task=task).result()
+            deduplicate = deduplicate_daily.submit(source,data)
+            validate = validate_daily.submit(source,deduplicate)
 
             ids = stock_daily_publish.submit(validate).result()
 
-            print(f"任务完成: {stock_task.task_id}, 发布 {len(ids)} 条")
+            print(f"任务完成: {task.task_id}, 发布 {len(ids)} 条")
 
         except Exception as exc:
-            print(f"任务失败: {stock_task.task_id}, 原因: {exc}")
+            print(f"任务失败: {task.task_id}, 原因: {exc}")
             continue
 
 if __name__ == "__main__":
