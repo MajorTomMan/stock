@@ -20,5 +20,5 @@ class MessagePublisher(ABC):
             Exception: 发布失败时抛出异常。
     """
     @abstractmethod
-    async def publish(self, data: Sequence[DailyBar]) -> str:
+    async def publish(self, data: Sequence[DailyBar]) -> list[str]:
         pass

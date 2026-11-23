@@ -2,4 +2,6 @@
 
 
 class RedisStream:
-    Name = "stock-daily"
+    Name = "stock:daily"
+    BaoName = "stock:daily:bao"
+    
