@@ -101,19 +101,19 @@ async def stock_daily_publish(data:list):
 
 @flow(name="bao-stock-daily")
 def stock_daily_flow(tasks: list[StockTask]):
-    for task in tasks:
+    for stock_task in tasks:
         try:
-            data = fetch_daily.submit(task=task)
-        except:
-            print(f"拉取异常:{task}")
+            data = fetch_daily.submit(task=stock_task).result()
+            deduplicate = deduplicate_daily.submit(data)
+            validate = validate_daily.submit(deduplicate)
+
+            ids = stock_daily_publish.submit(validate).result()
+
+            print(f"任务完成: {stock_task.task_id}, 发布 {len(ids)} 条")
+
+        except Exception as exc:
+            print(f"任务失败: {stock_task.task_id}, 原因: {exc}")
             continue
-        deduplicate = deduplicate_daily.submit(data)
-        validate = validate_daily.submit(deduplicate)
-        preview = preview_daily.submit(validate)
-        ids = stock_daily_publish.submit(validate).result()
-        for msg_id in ids:
-            print(msg_id)
-    print("Flow completed.")
 
 if __name__ == "__main__":
-    stock_daily_flow()
+    stock_daily_flow(tasks=tasks)
