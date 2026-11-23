@@ -1,7 +1,7 @@
 
 
 
-from ingestion.src.handler.deduplicate_handler import DeduplicateHandler
+from ingestion.src.handler.handlers.deduplicate_handler import DeduplicateHandler
 from ingestion.src.source.bao.model.daily_bar import BaoDailyBar
 
 

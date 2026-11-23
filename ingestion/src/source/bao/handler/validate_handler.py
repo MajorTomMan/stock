@@ -1,4 +1,4 @@
-from ingestion.src.handler.validate_handler import ValidateHandler
+from ingestion.src.handler.handlers.validate_handler import ValidateHandler
 from ingestion.src.source.bao.model.daily_bar import BaoDailyBar
 
 
