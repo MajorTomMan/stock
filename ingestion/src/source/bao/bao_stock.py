@@ -8,14 +8,16 @@ from ingestion.src.source.stock_source import StockSource
 
 class BaoStock(StockSource):
 
+    def __init__(self):
+         self.login()
+
+
+    def __del__(self):
+         self.logout()
 
     def fetch_daily(self, symbol, start_date, end_date):
-        self.login()
-        try:
             result = self.query_daily_k_data(code=symbol, start_date=start_date, end_date=end_date)
             return self.parse_daily_bars(self.format_data(result))
-        finally:
-            self.logout()
 
 
     def login_with_name(self, username: str, password: str):
@@ -77,6 +79,16 @@ class BaoStock(StockSource):
             )
             bars.append(bar)
         return bars
+
+
+    
+    def fetch_stock_basic(self,code=None) -> pd.DataFrame:
+            stocks = self.format_data(bs.query_stock_basic(code=code))
+            return stocks.to_dict()
+    
+    def fetch_stock_list(self, trade_date: str) -> list[pd.DataFrame]:
+            stocks = self.format_data(bs.query_all_stock(trade_date))
+            return stocks.to_dict(orient="records")
 
 
     def _decimal(self,value: object) -> Decimal | None:

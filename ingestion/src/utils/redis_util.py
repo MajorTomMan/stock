@@ -161,3 +161,10 @@ class RedisUtil:
         )
 
 
+    async def get(self, key: str):
+        return await self.client.get(key)
+
+
+    async def set(self, key: str, value: str):
+        return await self.client.set(key, value)
+
