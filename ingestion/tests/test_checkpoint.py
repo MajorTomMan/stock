@@ -23,7 +23,7 @@ StockTask(
     source="bao",
     dataset="daily",
     params={
-        "symbol": "sh.600000",
+        "code": "sh.600000",
         "start_date": "2023-01-01",
         "end_date": "2023-12-31",
     }),
@@ -32,7 +32,7 @@ StockTask(
     source="bao",
     dataset="daily",
     params={
-        "symbol": "sz.000001",
+        "code": "sz.000001",
         "start_date": "2023-01-01",
         "end_date": "2023-12-31",
     })
@@ -46,11 +46,11 @@ def fetch_daily(task:StockTask):
     params = task.params
     if params:
         source = task.source
-        symbol = params.get("symbol")
+        code = params.get("code")
         start_date = params.get("start_date")
         end_date = params.get("end_date")
         instance = factory.get(source=source)
-        results = instance.fetch_daily(symbol=symbol,start_date=start_date,end_date=end_date)
+        results = instance.fetch_daily(code=code,start_date=start_date,end_date=end_date)
         return results
 @task
 def deduplicate_daily(source:str,bars:list[BaoDailyBar]):    
@@ -97,7 +97,7 @@ async def load_checkpoint(key: str) -> dict | None:
         return json.loads(result)
 
 def generateKey(task:StockTask):
-    return f"stock:checkpoint:{task.source}:{task.dataset}:{task.params["symbol"]}:{task.params.get("adjust_flag", 3)}"
+    return f"stock:checkpoint:{task.source}:{task.dataset}:{task.params["code"]}:{task.params.get("adjust_flag", 3)}"
     
 @task
 async def save_checkpoint(key: str, checkpoint: dict) -> None:
@@ -136,7 +136,7 @@ async def stock_daily_flow(tasks: list[StockTask]):
             source = task.source
             cached_checkpoint = await load_checkpoint(key)
             if cached_checkpoint:
-                print(f"{task.params["symbol"]}的检查点为:{cached_checkpoint}")
+                print(f"{task.params["code"]}的检查点为:{cached_checkpoint}")
                 cached_start_date = cached_checkpoint.get("start_date")
                 cached_end_date = cached_checkpoint.get("end_date")
                 if cached_start_date:
@@ -147,7 +147,7 @@ async def stock_daily_flow(tasks: list[StockTask]):
                     if task.params["start_date"] > task.params["end_date"]:
                         continue
             else:
-                print(f"{task.params["symbol"]}的检查点为空")
+                print(f"{task.params["code"]}的检查点为空")
             data = fetch_daily.submit(task=task).result()
             deduplicate = deduplicate_daily.submit(source,data)
             validate = validate_daily.submit(source,deduplicate)

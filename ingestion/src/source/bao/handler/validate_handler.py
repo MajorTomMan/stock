@@ -17,7 +17,7 @@ class BaoValidateHandler(ValidateHandler):
     @staticmethod
     def validate(bar:BaoDailyBar):
 
-        if bar.symbol is None or bar.trade_date is None:
+        if bar.code is None or bar.trade_date is None:
                 raise ValueError(f"股票代码或交易日期不能为空: {bar}")
         if bar.open is None:
                raise ValueError(f"开盘价不能为空: {bar}")

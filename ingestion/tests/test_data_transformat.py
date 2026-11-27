@@ -11,7 +11,7 @@ from ingestion.src.source.bao.model.daily_bar import BaoDailyBar
 def test_from_dict_basic():
     data = {
         "trade_date": "2023-01-03",
-        "symbol": "sh.600000",
+        "code": "sh.600000",
         "source": "bao",
         "open": "7.2700",
         "close": "7.2300",
@@ -32,7 +32,7 @@ def test_from_dict_basic():
 def test_from_dict_nullable():
     data = {
         "trade_date": "2023-01-03",
-        "symbol": "sh.600000",
+        "code": "sh.600000",
         "source": "bao",
         "open": None,
         "close": "0.0000",
@@ -50,7 +50,7 @@ def test_from_dict_nullable():
 def test_bao_from_dict():
     data = {
         "trade_date": "2023-01-03",
-        "symbol": "sh.600000",
+        "code": "sh.600000",
         "source": "bao",
         "close": "7.2300",
         "turnover_rate": "0.088200",
@@ -74,7 +74,7 @@ def test_bao_from_dict():
 def test_to_dict():
     bar = DailyBar(
         trade_date=date(2023, 1, 3),
-        symbol="sh.600000",
+        code="sh.600000",
         source="bao",
         close=Decimal("7.2300"),
     )
@@ -91,7 +91,7 @@ def test_to_dict():
 def test_json_roundtrip():
     original = BaoDailyBar(
         trade_date=date(2023, 1, 3),
-        symbol="sh.600000",
+        code="sh.600000",
         source="bao",
         close=Decimal("7.2300"),
         turnover_rate=Decimal("0.088200"),
@@ -119,7 +119,7 @@ def test_json_roundtrip():
 def test_from_dict_date_object():
     data = {
         "trade_date": date(2023, 1, 3),
-        "symbol": "sh.600000",
+        "code": "sh.600000",
         "source": "bao",
         "close": "7.2300",
     }
@@ -133,7 +133,7 @@ def test_from_dict_date_object():
 def test_from_dict_null_date():
     data = {
         "trade_date": None,
-        "symbol": "sh.600000",
+        "code": "sh.600000",
         "source": "bao",
     }
 
@@ -145,7 +145,7 @@ def test_from_dict_null_date():
 def test_json_roundtrip():
     original = BaoDailyBar(
         trade_date=date(2023, 1, 3),
-        symbol="sh.600000",
+        code="sh.600000",
         source="bao",
         close=Decimal("7.2300"),
         turnover_rate=Decimal("0.088200"),

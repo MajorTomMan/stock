@@ -15,7 +15,7 @@ from ingestion.src.source.bao.model.daily_bar import BaoDailyBar
 test_bars = [
     # A：正常记录
     BaoDailyBar(
-        symbol="sh.600000",
+        code="sh.600000",
         trade_date=date(2023, 1, 3),
         close=Decimal("10.50"),
         adjust_flag=3
@@ -23,7 +23,7 @@ test_bars = [
 
     # B：与 A 完全重复
     BaoDailyBar(
-        symbol="sh.600000",
+        code="sh.600000",
         trade_date=date(2023, 1, 3),
         close=Decimal("10.50"),
         adjust_flag=3
@@ -31,7 +31,7 @@ test_bars = [
 
     # C：与 A 业务键相同，但收盘价不同
     BaoDailyBar(
-        symbol="sh.600000",
+        code="sh.600000",
         trade_date=date(2023, 1, 3),
         close=Decimal("10.80"),
         adjust_flag=3
@@ -39,7 +39,7 @@ test_bars = [
 
     # D：不同日期
     BaoDailyBar(
-        symbol="sh.600000",
+        code="sh.600000",
         trade_date=date(2023, 1, 4),
         close=Decimal("10.60"),
         adjust_flag=3
@@ -47,7 +47,7 @@ test_bars = [
 
     # E：不同复权方式
     BaoDailyBar(
-        symbol="sh.600000",
+        code="sh.600000",
         trade_date=date(2023, 1, 3),
         close=Decimal("10.50"),
         adjust_flag=1
@@ -55,7 +55,7 @@ test_bars = [
 
     # F：不同股票
     BaoDailyBar(
-        symbol="sz.000001",
+        code="sz.000001",
         trade_date=date(2023, 1, 3),
         close=Decimal("12.00"),
         adjust_flag=3
@@ -63,7 +63,7 @@ test_bars = [
 
     # G：与 D 重复
     BaoDailyBar(
-        symbol="sh.600000",
+        code="sh.600000",
         trade_date=date(2023, 1, 4),
         close=Decimal("10.60"),
         adjust_flag=3

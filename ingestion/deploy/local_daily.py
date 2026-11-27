@@ -7,7 +7,7 @@ tasks = [
         source="bao",
         dataset="daily",
         params={
-            "symbol": "sh.600000",
+            "code": "sh.600000",
             "start_date": "2023-01-01",
             "end_date": "2023-01-05",
         },

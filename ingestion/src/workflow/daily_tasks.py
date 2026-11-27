@@ -14,11 +14,11 @@ def fetch_daily(task:StockTask):
     params = task.params
     if params:
         source = task.source
-        symbol = params.get("symbol")
+        code = params.get("code")
         start_date = params.get("start_date")
         end_date = params.get("end_date")
         instance = factory.get(source=source)
-        results = instance.fetch_daily(symbol=symbol,start_date=start_date,end_date=end_date)
+        results = instance.fetch_daily(code=code,start_date=start_date,end_date=end_date)
         return results
 @task
 def deduplicate_daily(source:str,bars:list[DailyBar]):    

@@ -3,7 +3,7 @@ STOCK_FIELDS = {
     "basic": {
         # 基础信息
         "trade_date": "trade_date",
-        "symbol": "symbol",
+        "code": "code",
 
         # 价格信息
         "open": "open",
@@ -22,7 +22,7 @@ STOCK_FIELDS = {
     "bao": {
         # 基础信息
         "trade_date": "date",
-        "symbol": "code",
+        "code": "code",
 
         # 价格信息
         "pre_close": "preclose",

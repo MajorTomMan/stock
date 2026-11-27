@@ -19,7 +19,7 @@ def main():
     for stock in stocks:
         code = stock.get("code")
         if code:
-            result = get_all_stock_with_basic(code)
+            result = get_all_stock_with_basic()
             if result:
                 print(result)
                 print(result.get("code_name").get(0))

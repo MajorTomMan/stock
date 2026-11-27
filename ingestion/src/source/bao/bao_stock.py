@@ -3,6 +3,7 @@ from decimal import Decimal
 import baostock as bs
 import pandas as pd
 
+from ingestion.src.model.stock_basic import StockBasic
 from ingestion.src.source.bao.model.daily_bar import BaoDailyBar
 from ingestion.src.source.stock_source import StockSource
 
@@ -15,10 +16,12 @@ class BaoStock(StockSource):
     def __del__(self):
          self.logout()
 
-    def fetch_daily(self, symbol, start_date, end_date):
-            result = self.query_daily_k_data(code=symbol, start_date=start_date, end_date=end_date)
+    def fetch_daily(self, code, start_date, end_date):
+            result = self.query_daily_k_data(code=code, start_date=start_date, end_date=end_date)
             return self.parse_daily_bars(self.format_data(result))
 
+    def fetch_basic(self,code:str = None):
+        result = self
 
     def login_with_name(self, username: str, password: str):
         return bs.login(username=username, password=password)
@@ -34,6 +37,12 @@ class BaoStock(StockSource):
 
     def logout(self):
         return bs.logout()
+
+
+
+    def query_stock_basic(self,code:str = None):
+            bs.query_stock_basic(code)
+         
 
     def query_daily_k_data(self, code: str, start_date: str, end_date: str):
         fields = BaoDailyBar.to_fields()
@@ -59,7 +68,7 @@ class BaoStock(StockSource):
             raw_st = str(row.get("isST", "")).strip()
             bar = BaoDailyBar(
                 trade_date=pd.to_datetime(row["date"]).date(),
-                symbol=row["code"],
+                code=row["code"],
                 open=self._decimal(row["open"]),
                 high=self._decimal(row["high"]),
                 low=self._decimal(row["low"]),
@@ -82,11 +91,15 @@ class BaoStock(StockSource):
 
 
     
-    def fetch_stock_basic(self,code=None) -> pd.DataFrame:
-            stocks = self.format_data(bs.query_stock_basic(code=code))
-            return stocks.to_dict()
+    def fetch_stock_basic(self,code=None) -> list[StockBasic]:
+            basics = []
+            stocks = self.format_data(bs.query_stock_basic(code=code)).to_dict(orient="records")
+            for stock in stocks:
+                basic = StockBasic.from_dict(stock)
+                basics.append(basic)
+            return basics
     
-    def fetch_stock_list(self, trade_date: str) -> list[pd.DataFrame]:
+    def fetch_stock_list(self, trade_date: str) -> list[StockBasic]:
             stocks = self.format_data(bs.query_all_stock(trade_date))
             return stocks.to_dict(orient="records")
 

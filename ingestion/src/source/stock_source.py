@@ -8,7 +8,7 @@ class StockSource(ABC):
     @abstractmethod
     def fetch_daily(
         self,
-        symbol: str,
+        code: str,
         start_date: str,
         end_date: str
     ) -> Sequence[DailyBar]:

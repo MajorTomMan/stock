@@ -10,7 +10,7 @@ class DailyBar:
 
     # ===== 基础信息 =====
     trade_date: date | None = None            # 交易日期
-    symbol: str | None = None            # 股票代码，例如 sh.600000
+    code: str | None = None            # 股票代码，例如 sh.600000
     source : str | None = None                 # 数据来源，例如 BaoStock
     # ===== 价格信息 =====
     open: Decimal | None = None       # 开盘价，元/股

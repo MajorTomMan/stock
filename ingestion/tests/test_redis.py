@@ -17,7 +17,7 @@ async def test_publish():
             stream="stock:daily",
             fields={
                 "source": "bao",
-                "symbol": "sh.600000",
+                "code": "sh.600000",
                 "trade_date": "2023-01-03",
                 "close": "10.50",
             },
